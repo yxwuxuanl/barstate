@@ -17,8 +17,8 @@ do
 done
 
 key_differences="$(comm -3 \
-    <(rg -o '^"[^"]+"' "$EN_DIR/Localizable.strings" | sort) \
-    <(rg -o '^"[^"]+"' "$ZH_DIR/Localizable.strings" | sort))"
+    <(grep -Eo '^"[^"]+"' "$EN_DIR/Localizable.strings" | sort) \
+    <(grep -Eo '^"[^"]+"' "$ZH_DIR/Localizable.strings" | sort))"
 if [[ -n "$key_differences" ]]; then
     print -u2 "Localizable.strings keys differ between en and zh-Hans:"
     print -u2 "$key_differences"
@@ -26,19 +26,17 @@ if [[ -n "$key_differences" ]]; then
 fi
 
 referenced_keys=(
-    "${(@f)$(rg -o --no-filename \
+    "${(@f)$(grep -hEo \
         'L10n\.(string|format|plural)\("[^"]+"' \
-        "$PROJECT_DIR/Sources" \
-        -g '*.swift' \
+        "$PROJECT_DIR"/Sources/**/*.swift \
         | sed -E 's/.*\("([^"]+)"/\1/' \
         | sort -u)}"
 )
 
 for locale_dir in "$EN_DIR" "$ZH_DIR"; do
     for key in "${referenced_keys[@]}"; do
-        if ! rg -q \
-            '"'"$key"'"|<key>'"$key"'</key>' \
-            "$locale_dir"
+        if ! grep -Fq '"'"$key"'"' "$locale_dir/Localizable.strings" \
+            && ! grep -Fq '<key>'"$key"'</key>' "$locale_dir/Localizable.stringsdict"
         then
             print -u2 "Missing localization key in ${locale_dir:t}: $key"
             exit 1
@@ -46,9 +44,13 @@ for locale_dir in "$EN_DIR" "$ZH_DIR"; do
     done
 done
 
-if rg -n '"[^"\n]*[\p{Han}][^"\n]*"' \
-    "$PROJECT_DIR/Sources" \
-    -g '*.swift'
+if /usr/bin/perl -CSDA -ne '
+    if (/"[^"\n]*\p{Han}[^"\n]*"/) {
+        print "$ARGV:$.:$_";
+        $found = 1;
+    }
+    END { exit($found ? 0 : 1) }
+' "$PROJECT_DIR"/Sources/**/*.swift
 then
     print -u2 "Hard-coded Chinese string literals remain in production Swift sources."
     exit 1
