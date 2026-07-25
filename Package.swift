@@ -26,6 +26,9 @@ let package = Package(
         .executableTarget(
             name: "BarState",
             dependencies: ["BarStateCore"],
+            swiftSettings: [
+                .enableExperimentalFeature("IsolatedDeinit")
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Network"),
