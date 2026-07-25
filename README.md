@@ -23,8 +23,8 @@ BarState 是一个 macOS 15+ 菜单栏工具。它周期性请求用户配置的
 
 当前预发布包要求 macOS 15 或更高版本，并且仅支持 Apple Silicon（M1 或更新的 Mac）。Intel Mac 用户需要暂时从源码自行构建。
 
-1. 在 [Releases](../../releases) 页面下载最新的 `BarState` 压缩包。
-2. 解压后，将 `BarState.app` 拖入“应用程序”文件夹。
+1. 在 [Releases](../../releases) 页面下载最新的 `BarState-macos-arm64.dmg`。
+2. 打开 DMG，将 `BarState.app` 拖入“应用程序”文件夹。
 3. 双击 `BarState.app` 尝试打开。由于当前版本未经签名和公证，macOS 可能会阻止启动。
 4. 打开“系统设置” → “隐私与安全性”，滚动到“安全性”区域，找到刚刚被阻止的 BarState，然后点击“仍要打开”。
 5. 使用登录密码或 Touch ID 确认，再次点击“打开”。macOS 记住这次选择后，后续可以正常双击启动。

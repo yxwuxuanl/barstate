@@ -1,0 +1,110 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run Swift package tests
+        run: swift test
+
+      - name: Check localizations
+        run: ./scripts/check-localizations.sh
+
+      - name: Build app bundle
+        run: ./scripts/build-app.sh
+
+      - name: Run app smoke tests
+        run: ./scripts/test-app-smoke.sh
+
+      - name: Package DMG
+        run: |
+          staging_dir=".build/dmg"
+          rm -rf "$staging_dir"
+          mkdir -p "$staging_dir"
+          cp -R .build/BarState.app "$staging_dir/"
+          ln -s /Applications "$staging_dir/Applications"
+          hdiutil create \
+            -volname BarState \
+            -srcfolder "$staging_dir" \
+            -ov \
+            -format UDZO \
+            .build/BarState-macos-arm64.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: barstate-dmg
+          path: .build/BarState-macos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download DMG artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: barstate-dmg
+          path: release
+
+      - name: Create release and upload DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          dmg_path="release/BarState-macos-arm64.dmg"
+          dmg_name="$(basename "$dmg_path")"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            if gh release view "$GITHUB_REF_NAME" \
+              --json assets \
+              --jq '.assets[].name' | grep -Fxq "$dmg_name"; then
+              echo "$dmg_name is already attached to $GITHUB_REF_NAME"
+            else
+              gh release upload "$GITHUB_REF_NAME" "$dmg_path"
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$dmg_path#BarState for Apple Silicon" \
+              --verify-tag \
+              --generate-notes \
+              --title "BarState $GITHUB_REF_NAME"
+          fi
