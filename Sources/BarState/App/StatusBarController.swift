@@ -65,7 +65,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
     }
 
-    isolated deinit {
+    func stop() {
+        monitorsCancellable?.cancel()
+        monitorsCancellable = nil
         stopDismissMonitoring()
     }
 

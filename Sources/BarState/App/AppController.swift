@@ -135,6 +135,7 @@ final class AppController {
     }
 
     func prepareForTermination() async {
+        statusBarController.stop()
         networkStatusMonitor?.cancel()
         await pollingEngine.stop()
         await store.flushPersistence()

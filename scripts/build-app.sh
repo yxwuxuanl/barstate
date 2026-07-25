@@ -46,7 +46,6 @@ CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
 
 CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
     -swift-version 6 \
-    -enable-experimental-feature IsolatedDeinit \
     -target "$TARGET" \
     -sdk "$SDK_PATH" \
     -O \
