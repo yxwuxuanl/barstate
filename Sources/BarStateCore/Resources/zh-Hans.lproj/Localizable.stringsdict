@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>popover.refreshing_count</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>正在刷新（%#@items@）</string>
+        <key>items</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>lld</string>
+            <key>other</key>
+            <string>%lld 项</string>
+        </dict>
+    </dict>
+    <key>refresh.success</key>
+    <dict>
+        <key>NSStringLocalizedFormatKey</key>
+        <string>%#@items@刷新成功</string>
+        <key>items</key>
+        <dict>
+            <key>NSStringFormatSpecTypeKey</key>
+            <string>NSStringPluralRuleType</string>
+            <key>NSStringFormatValueTypeKey</key>
+            <string>lld</string>
+            <key>other</key>
+            <string>%lld 项</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
