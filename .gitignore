@@ -15,4 +15,12 @@ xcuserdata/
 .env
 .env.*
 !.env.example
-.impeccable/
+/.agents/
+/.codex/
+/.impeccable/
+
+# Design and development artifacts (not required to build or run the app)
+/Design/
+/audit/
+/design-qa.md
+/Support/BarState.iconset/
