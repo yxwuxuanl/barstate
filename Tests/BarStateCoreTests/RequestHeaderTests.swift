@@ -215,7 +215,10 @@ struct RequestHeaderTests {
         )
 
         let request = try HTTPRequestBuilder.makeRequest(for: monitor)
-        let components = try #require(URLComponents(url: #require(request.url), resolvingAgainstBaseURL: false))
+        let requestURL = try #require(request.url)
+        let components = try #require(
+            URLComponents(url: requestURL, resolvingAgainstBaseURL: false)
+        )
 
         #expect(request.httpMethod == "GET")
         #expect(components.path == "/prometheus/api/v1/query")
