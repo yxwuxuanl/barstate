@@ -45,7 +45,8 @@ final class AppController {
                     monitorID: id,
                     result: outcome.result,
                     at: outcome.requestedAt,
-                    response: outcome.response
+                    response: outcome.response,
+                    requestDuration: outcome.requestDuration
                 )
             },
             statusHandler: { [weak store] status in
@@ -147,7 +148,7 @@ final class AppController {
 
     private static var previewMonitors: [Monitor] {
         let now = Date()
-        return [
+        var monitors = [
             Monitor(
                 name: L10n.string("preview.temperature.name"),
                 urlString: "https://example.com/temperature",
@@ -165,6 +166,7 @@ final class AppController {
                     lastAttemptAt: now,
                     lastResponse: HTTPResponseSnapshot(
                         requestedAt: now,
+                        requestDuration: 0.238,
                         statusCode: 200,
                         reasonPhrase: "OK",
                         httpVersion: "HTTP/2",
@@ -196,11 +198,15 @@ final class AppController {
                     lastAttemptAt: now.addingTimeInterval(-120),
                     lastResponse: HTTPResponseSnapshot(
                         requestedAt: now.addingTimeInterval(-120),
+                        requestDuration: 0.412,
                         statusCode: 200,
                         reasonPhrase: "OK",
                         httpVersion: "HTTP/2",
                         headers: [
-                            HTTPResponseHeader(name: "Content-Type", value: "application/json")
+                            HTTPResponseHeader(
+                                name: "Content-Type",
+                                value: "application/json; charset=utf-8"
+                            )
                         ],
                         bodyText: """
                         {
@@ -220,6 +226,7 @@ final class AppController {
                     lastValue: 7.24,
                     lastSuccessAt: now.addingTimeInterval(-600),
                     lastAttemptAt: now,
+                    lastRequestDuration: 10,
                     consecutiveFailures: 1,
                     lastError: .legacy(L10n.string("preview.error.request_timeout"))
                 )
@@ -233,10 +240,59 @@ final class AppController {
                     lastValue: 72,
                     lastSuccessAt: now.addingTimeInterval(-3_600),
                     lastAttemptAt: now,
+                    lastRequestDuration: 10,
                     consecutiveFailures: 3,
                     lastError: .legacy(L10n.string("preview.error.repeated_failure"))
                 )
             )
         ]
+        if ProcessInfo.processInfo.arguments.contains("--preview-prometheus") {
+            monitors.append(Monitor(
+                name: L10n.string("preview.prometheus.name"),
+                sourceKind: .prometheus,
+                urlString: "https://prometheus.example.com",
+                promQL: #"sum(rate(http_requests_total{job="api",status=~"5.."}[5m]))"#,
+                requestHeaders: [
+                    RequestHeader(name: "Authorization", value: "Bearer preview-token")
+                ],
+                displayTemplate: L10n.string("preview.prometheus.template"),
+                showsInMenuBar: true,
+                order: -1,
+                runtime: MonitorRuntimeState(
+                    lastValue: 0.023,
+                    lastSuccessAt: now,
+                    lastAttemptAt: now,
+                    lastResponse: HTTPResponseSnapshot(
+                        requestedAt: now,
+                        requestDuration: 0.186,
+                        statusCode: 200,
+                        reasonPhrase: "OK",
+                        httpVersion: "HTTP/2",
+                        headers: [
+                            HTTPResponseHeader(
+                                name: "Content-Type",
+                                value: "application/json; charset=utf-8"
+                            )
+                        ],
+                        bodyText: """
+                        {
+                          "data" : {
+                            "result" : [
+                              {
+                                "metric" : {},
+                                "value" : [ 1753511520.0, "0.023" ]
+                              }
+                            ],
+                            "resultType" : "vector"
+                          },
+                          "status" : "success"
+                        }
+                        """,
+                        bodyKind: .json
+                    )
+                )
+            ))
+        }
+        return monitors
     }
 }

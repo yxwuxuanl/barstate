@@ -17,6 +17,7 @@ struct SettingsView: View {
     private enum PendingNavigation {
         case select(UUID?)
         case create
+        case clone(UUID)
     }
 
     var body: some View {
@@ -102,6 +103,13 @@ struct SettingsView: View {
                 Text(L10n.string("settings.monitors"))
                     .font(.headline)
                 Spacer()
+                Button(L10n.string("settings.clone")) {
+                    guard let selectedID else { return }
+                    requestNavigation(.clone(selectedID))
+                }
+                .disabled(!canCloneSelected)
+                .help(L10n.string("settings.clone_help"))
+
                 Button(L10n.string("settings.add")) {
                     requestNavigation(.create)
                 }
@@ -113,8 +121,7 @@ struct SettingsView: View {
             List(selection: sidebarSelection) {
                 if let pendingDraft {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(pendingDraft.name)
-                            .lineLimit(1)
+                        monitorNameRow(for: pendingDraft)
                         Text(L10n.string("common.unsaved"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -130,8 +137,7 @@ struct SettingsView: View {
 
                 ForEach(store.orderedMonitors) { monitor in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(monitor.name)
-                            .lineLimit(1)
+                        monitorNameRow(for: monitor)
                         Text(sidebarSubtitle(for: monitor))
                             .font(.caption)
                             .foregroundStyle(sidebarColor(for: monitor))
@@ -176,6 +182,28 @@ struct SettingsView: View {
                 .disabled(!canMoveSelected(by: 1))
             }
             .padding(14)
+        }
+    }
+
+    private func monitorNameRow(for monitor: Monitor) -> some View {
+        HStack(spacing: 6) {
+            Text(monitor.name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if monitor.sourceKind == .prometheus {
+                Text(monitor.sourceKind.displayName)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        .quaternary,
+                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    )
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
         }
     }
 
@@ -301,6 +329,30 @@ struct SettingsView: View {
         return store.orderedMonitors.indices.contains(index + offset)
     }
 
+    private var canCloneSelected: Bool {
+        guard let selectedID else { return false }
+        return store.monitor(id: selectedID) != nil
+    }
+
+    private func uniqueCloneName(for monitor: Monitor) -> String {
+        let existingNames = Set(store.monitors.map(\.name))
+        let baseName = L10n.format("settings.clone_name", monitor.name)
+        guard existingNames.contains(baseName) else { return baseName }
+
+        var suffix: Int64 = 2
+        while true {
+            let candidate = L10n.format(
+                "settings.clone_name_numbered",
+                monitor.name,
+                suffix
+            )
+            if !existingNames.contains(candidate) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
     private func sidebarSubtitle(for monitor: Monitor) -> String {
         guard monitor.isEnabled else { return L10n.string("status.disabled") }
         if store.pollingStatus.refreshingIDs.contains(monitor.id) {
@@ -349,6 +401,19 @@ struct SettingsView: View {
             selectedID = id
         case .create:
             let draft = Monitor.draft(order: store.monitors.count)
+            pendingDraft = draft
+            selectedID = draft.id
+            session.setDirty(true)
+        case let .clone(id):
+            guard let source = store.monitor(id: id) else {
+                selectedID = store.orderedMonitors.first?.id
+                return
+            }
+            let draft = makeMonitorClone(
+                from: source,
+                name: uniqueCloneName(for: source),
+                order: store.monitors.count
+            )
             pendingDraft = draft
             selectedID = draft.id
             session.setDirty(true)

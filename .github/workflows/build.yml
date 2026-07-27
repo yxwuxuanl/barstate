@@ -18,9 +18,21 @@ concurrency:
 
 jobs:
   build:
-    name: Build and test
-    runs-on: macos-15
+    name: Build and test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            dmg_name: BarState-macos-arm64.dmg
+            artifact_name: barstate-dmg-arm64
+          - arch: x86_64
+            runner: macos-15-intel
+            dmg_name: BarState-macos-x86_64.dmg
+            artifact_name: barstate-dmg-x86_64
 
     steps:
       - name: Check out repository
@@ -45,6 +57,20 @@ jobs:
       - name: Run app smoke tests
         run: ./scripts/test-app-smoke.sh
 
+      - name: Verify app architecture
+        run: |
+          binaries=(
+            ".build/BarState.app/Contents/MacOS/BarState"
+            ".build/BarState.app/Contents/XPCServices/com.barstate.BarState.ScriptService.xpc/Contents/MacOS/BarStateScriptService"
+          )
+          for binary in "${binaries[@]}"; do
+            actual_arch="$(lipo -archs "$binary")"
+            if [[ "$actual_arch" != "${{ matrix.arch }}" ]]; then
+              echo "Expected $binary to be ${{ matrix.arch }}, got $actual_arch"
+              exit 1
+            fi
+          done
+
       - name: Package DMG
         run: |
           staging_dir=".build/dmg"
@@ -57,13 +83,13 @@ jobs:
             -srcfolder "$staging_dir" \
             -ov \
             -format UDZO \
-            .build/BarState-macos-arm64.dmg
+            ".build/${{ matrix.dmg_name }}"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
-          name: barstate-dmg
-          path: .build/BarState-macos-arm64.dmg
+          name: ${{ matrix.artifact_name }}
+          path: .build/${{ matrix.dmg_name }}
           if-no-files-found: error
           retention-days: 14
 
@@ -77,33 +103,46 @@ jobs:
       contents: write
 
     steps:
-      - name: Download DMG artifact
+      - name: Download Apple Silicon DMG artifact
         uses: actions/download-artifact@v8
         with:
-          name: barstate-dmg
+          name: barstate-dmg-arm64
           path: release
 
-      - name: Create release and upload DMG
+      - name: Download Intel DMG artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: barstate-dmg-x86_64
+          path: release
+
+      - name: Create release and upload DMGs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          dmg_path="release/BarState-macos-arm64.dmg"
-          dmg_name="$(basename "$dmg_path")"
+          dmg_assets=(
+            "release/BarState-macos-arm64.dmg#BarState for Apple Silicon (arm64)"
+            "release/BarState-macos-x86_64.dmg#BarState for Intel Macs (x86_64)"
+          )
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            if gh release view "$GITHUB_REF_NAME" \
+            existing_assets="$(gh release view "$GITHUB_REF_NAME" \
               --json assets \
-              --jq '.assets[].name' | grep -Fxq "$dmg_name"; then
-              echo "$dmg_name is already attached to $GITHUB_REF_NAME"
-            else
-              gh release upload "$GITHUB_REF_NAME" "$dmg_path"
-            fi
+              --jq '.assets[].name')"
+            for dmg_asset in "${dmg_assets[@]}"; do
+              dmg_path="${dmg_asset%%#*}"
+              dmg_name="$(basename "$dmg_path")"
+              if grep -Fxq "$dmg_name" <<< "$existing_assets"; then
+                echo "$dmg_name is already attached to $GITHUB_REF_NAME"
+              else
+                gh release upload "$GITHUB_REF_NAME" "$dmg_asset"
+              fi
+            done
           else
             gh release create "$GITHUB_REF_NAME" \
-              "$dmg_path#BarState for Apple Silicon" \
+              "${dmg_assets[@]}" \
               --verify-tag \
               --generate-notes \
               --title "BarState $GITHUB_REF_NAME"

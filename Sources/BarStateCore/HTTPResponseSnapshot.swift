@@ -4,14 +4,6 @@ public enum ResponseBodyKind: String, Codable, Equatable, Sendable {
     case json
     case text
     case binary
-
-    public var javaScriptParameterType: String {
-        switch self {
-        case .json: "Object"
-        case .text: "string"
-        case .binary: "Object|string"
-        }
-    }
 }
 
 public struct HTTPResponseHeader: Codable, Equatable, Sendable {
@@ -26,6 +18,7 @@ public struct HTTPResponseHeader: Codable, Equatable, Sendable {
 
 public struct HTTPResponseSnapshot: Codable, Equatable, Sendable {
     public var requestedAt: Date
+    public var requestDuration: TimeInterval?
     public var statusCode: Int?
     public var reasonPhrase: String?
     public var httpVersion: String?
@@ -35,6 +28,7 @@ public struct HTTPResponseSnapshot: Codable, Equatable, Sendable {
 
     public init(
         requestedAt: Date,
+        requestDuration: TimeInterval? = nil,
         statusCode: Int? = nil,
         reasonPhrase: String? = nil,
         httpVersion: String? = nil,
@@ -43,6 +37,7 @@ public struct HTTPResponseSnapshot: Codable, Equatable, Sendable {
         bodyKind: ResponseBodyKind
     ) {
         self.requestedAt = requestedAt
+        self.requestDuration = requestDuration
         self.statusCode = statusCode
         self.reasonPhrase = reasonPhrase
         self.httpVersion = httpVersion

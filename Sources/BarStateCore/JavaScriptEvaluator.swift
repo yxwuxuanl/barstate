@@ -5,7 +5,7 @@ public enum JavaScriptEvaluator {
     public static var defaultFunctionSource: String {
         """
         /**
-         * @param {Object|string} response \(L10n.string("javascript.response_description"))
+         * @param {string|Object} response \(L10n.string("javascript.response_description"))
          * @returns {number|string}
          */
         function(response) {
@@ -30,13 +30,9 @@ public enum JavaScriptEvaluator {
         """
     }
 
-    public static func updatingResponseType(
-        in source: String,
-        bodyKind: ResponseBodyKind?
-    ) -> String {
+    public static func normalizingResponseJSDoc(in source: String) -> String {
         let normalized = normalizedFunctionSource(source)
-        let parameterType = bodyKind?.javaScriptParameterType ?? "Object|string"
-        let replacement = " * @param {\(parameterType)} response \(L10n.string("javascript.response_description"))"
+        let replacement = " * @param {string|Object} response \(L10n.string("javascript.response_description"))"
         let pattern = #"(?m)^[ \t]*\*[ \t]*@param[ \t]+\{[^}]+\}[ \t]+response.*$"#
 
         if let range = normalized.range(of: pattern, options: .regularExpression) {
@@ -52,6 +48,18 @@ public enum JavaScriptEvaluator {
          */
         \(normalized)
         """
+    }
+
+    @available(
+        *,
+        deprecated,
+        message: "Use normalizingResponseJSDoc(in:); the response type no longer depends on body kind"
+    )
+    public static func updatingResponseType(
+        in source: String,
+        bodyKind _: ResponseBodyKind?
+    ) -> String {
+        normalizingResponseJSDoc(in: source)
     }
 
     public static func evaluate(responseData: Data, scriptBody: String) throws -> Double {

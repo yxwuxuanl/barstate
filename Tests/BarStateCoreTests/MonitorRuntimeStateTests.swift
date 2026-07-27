@@ -71,6 +71,7 @@ struct MonitorRuntimeStateTests {
         let requestAt = Date(timeIntervalSince1970: 3_000)
         let response = HTTPResponseSnapshot(
             requestedAt: requestAt,
+            requestDuration: 0.238,
             statusCode: 200,
             reasonPhrase: "OK",
             httpVersion: "HTTP/2",
@@ -84,5 +85,25 @@ struct MonitorRuntimeStateTests {
         #expect(state.lastResponse == response)
         #expect(state.lastResponse?.statusLine == "HTTP/2 200 OK")
         #expect(state.lastResponse?.contentType == "text/plain")
+        #expect(state.lastRequestDuration == 0.238)
+    }
+
+    @Test func storesLatestFailedRequestDurationWithoutReplacingPreviousResponseDuration() {
+        let response = HTTPResponseSnapshot(
+            requestedAt: Date(timeIntervalSince1970: 4_000),
+            requestDuration: 0.25,
+            bodyText: "30",
+            bodyKind: .text
+        )
+        var state = MonitorRuntimeState(lastResponse: response)
+
+        state.recordFailure(
+            .requestTimedOut,
+            at: Date(timeIntervalSince1970: 4_010),
+            requestDuration: 10
+        )
+
+        #expect(state.lastRequestDuration == 10)
+        #expect(state.lastResponse?.requestDuration == 0.25)
     }
 }

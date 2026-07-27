@@ -66,7 +66,7 @@ struct JavaScriptEvaluatorTests {
         #expect(result == 30.1)
     }
 
-    @Test func updatesOnlyTheJSDocResponseType() {
+    @Test func normalizesOnlyTheJSDocResponseTypeToAUnion() {
         let original = """
         /**
          * @param {Object|string} response 响应内容
@@ -77,12 +77,10 @@ struct JavaScriptEvaluatorTests {
         }
         """
 
-        let jsonSource = JavaScriptEvaluator.updatingResponseType(in: original, bodyKind: .json)
-        let textSource = JavaScriptEvaluator.updatingResponseType(in: jsonSource, bodyKind: .text)
+        let normalized = JavaScriptEvaluator.normalizingResponseJSDoc(in: original)
 
-        #expect(jsonSource.contains("@param {Object} response"))
-        #expect(textSource.contains("@param {string} response"))
-        #expect(textSource.contains("return response.value"))
-        #expect(!textSource.contains("Object|string"))
+        #expect(normalized.contains("@param {string|Object} response"))
+        #expect(normalized.contains("return response.value"))
+        #expect(!normalized.contains("Object|string"))
     }
 }

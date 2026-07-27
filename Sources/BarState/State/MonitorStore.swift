@@ -47,6 +47,7 @@ final class MonitorStore: ObservableObject {
         guard !monitors.contains(where: { $0.id == monitor.id }) else { return }
         var normalized = monitor
         normalized.refreshInterval = Monitor.normalizedRefreshInterval(monitor.refreshInterval)
+        normalized.requestTimeout = Monitor.normalizedRequestTimeout(monitor.requestTimeout)
         normalized.order = monitors.count
         monitors.append(normalized)
         configurationsDidChange()
@@ -56,6 +57,7 @@ final class MonitorStore: ObservableObject {
         guard let index = monitors.firstIndex(where: { $0.id == monitor.id }) else { return }
         var normalized = monitor
         normalized.refreshInterval = Monitor.normalizedRefreshInterval(monitor.refreshInterval)
+        normalized.requestTimeout = Monitor.normalizedRequestTimeout(monitor.requestTimeout)
         monitors[index] = normalized
         normalizeOrder()
         configurationsDidChange()
@@ -98,7 +100,8 @@ final class MonitorStore: ObservableObject {
         monitorID: UUID,
         result: Result<Double, MonitoringError>,
         at date: Date,
-        response: HTTPResponseSnapshot?
+        response: HTTPResponseSnapshot?,
+        requestDuration: TimeInterval? = nil
     ) {
         guard let index = monitors.firstIndex(where: { $0.id == monitorID }) else { return }
         switch result {
@@ -106,13 +109,15 @@ final class MonitorStore: ObservableObject {
             monitors[index].runtime.recordSuccess(
                 value,
                 at: date,
-                response: response
+                response: response,
+                requestDuration: requestDuration
             )
         case let .failure(error):
             monitors[index].runtime.recordFailure(
                 error,
                 at: date,
-                response: response
+                response: response,
+                requestDuration: requestDuration
             )
         }
         scheduleSave()

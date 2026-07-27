@@ -222,9 +222,12 @@ actor PollingEngine {
     }
 
     private static func requestConfigurationChanged(from old: Monitor, to new: Monitor) -> Bool {
-        old.urlString != new.urlString
+        old.sourceKind != new.sourceKind
+            || old.urlString != new.urlString
+            || old.promQL != new.promQL
             || old.requestHeaders != new.requestHeaders
             || old.parser != new.parser
+            || old.requestTimeout != new.requestTimeout
             || old.refreshInterval != new.refreshInterval
     }
 }

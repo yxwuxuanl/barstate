@@ -15,6 +15,7 @@ struct BarStateAppSmokeTests {
         }
 
         try testResponseAndParserCompatibility()
+        try testPrometheusQueryCompatibility()
         try testLocalizationAndErrorPersistence()
         try testPersistenceRecoveryAndPermissions()
         try await testPollingGenerationAndConcurrency()
@@ -36,14 +37,23 @@ struct BarStateAppSmokeTests {
         )
         precondition(parsed == 30.1, "plain-text JavaScript parsing failed")
 
-        let source = JavaScriptEvaluator.updatingResponseType(
-            in: JavaScriptEvaluator.defaultFunctionSource,
-            bodyKind: .text
+        let source = JavaScriptEvaluator.normalizingResponseJSDoc(
+            in: """
+            /**
+             * @param {Object} response legacy response type
+             * @returns {number|string}
+             */
+            function(response) { return response.value }
+            """
         )
-        precondition(source.contains("@param {string} response"), "JSDoc response type was not updated")
+        precondition(
+            source.contains("@param {string|Object} response"),
+            "JSDoc response type was not normalized to the union type"
+        )
 
         let snapshot = HTTPResponseSnapshot(
             requestedAt: Date(timeIntervalSince1970: 1_000),
+            requestDuration: 0.238,
             statusCode: 200,
             reasonPhrase: "OK",
             httpVersion: "HTTP/2",
@@ -61,6 +71,9 @@ struct BarStateAppSmokeTests {
         var legacyObject = try JSONSerialization.jsonObject(
             with: JSONEncoder().encode(legacyMonitor)
         ) as! [String: Any]
+        legacyObject.removeValue(forKey: "sourceKind")
+        legacyObject.removeValue(forKey: "promQL")
+        legacyObject.removeValue(forKey: "requestTimeout")
         legacyObject.removeValue(forKey: "displayTemplate")
         legacyObject["label"] = "气温 "
         legacyObject["unit"] = "℃"
@@ -77,11 +90,78 @@ struct BarStateAppSmokeTests {
             from: JSONSerialization.data(withJSONObject: legacyObject)
         )
         precondition(migrated.displayTemplate == "气温 ${value}℃", "display template migration failed")
+        precondition(migrated.sourceKind == .httpAPI, "legacy monitors must remain HTTP API monitors")
+        precondition(migrated.promQL.isEmpty, "legacy monitors must use an empty PromQL query")
+        precondition(
+            migrated.requestTimeout == Monitor.defaultRequestTimeout,
+            "legacy monitors must use the default request timeout"
+        )
         precondition(migrated.runtime.lastResponse?.bodyKind == .json, "response migration failed")
         precondition(
             migrated.runtime.lastError == .legacy("legacy failure"),
             "legacy string errors must remain readable"
         )
+    }
+
+    private static func testPrometheusQueryCompatibility() throws {
+        let monitor = Monitor(
+            name: "5xx QPS",
+            sourceKind: .prometheus,
+            urlString: "https://metrics.example.com/prometheus?tenant=barstate",
+            promQL: #"sum(rate(http_requests_total{status=~"5.."}[5m]))"#,
+            requestTimeout: 24
+        )
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        let components = URLComponents(
+            url: request.url!,
+            resolvingAgainstBaseURL: false
+        )!
+        precondition(
+            components.path == "/prometheus/api/v1/query",
+            "Prometheus query endpoint path was not composed correctly"
+        )
+        precondition(
+            components.queryItems?.first(where: { $0.name == "query" })?.value == monitor.promQL,
+            "PromQL was not URL encoded correctly"
+        )
+        precondition(request.timeoutInterval == 24, "request timeout was not applied")
+
+        let response = Data(#"""
+        {
+          "status":"success",
+          "data":{
+            "resultType":"vector",
+            "result":[{"metric":{},"value":[1720000000.25,"0.023"]}]
+          }
+        }
+        """#.utf8)
+        let parsedValue = try PrometheusResponseParser.number(from: response)
+        precondition(
+            parsedValue == 0.023,
+            "single-series Prometheus parsing failed"
+        )
+
+        let multipleSeries = Data(#"""
+        {
+          "status":"success",
+          "data":{
+            "resultType":"vector",
+            "result":[
+              {"metric":{"instance":"a"},"value":[1,"1"]},
+              {"metric":{"instance":"b"},"value":[1,"2"]}
+            ]
+          }
+        }
+        """#.utf8)
+        do {
+            _ = try PrometheusResponseParser.number(from: multipleSeries)
+            preconditionFailure("multiple Prometheus series must not be silently accepted")
+        } catch let error as MonitoringError {
+            precondition(
+                error == .prometheusMultipleSeries(2),
+                "multiple Prometheus series returned the wrong error"
+            )
+        }
     }
 
     private static func testLocalizationAndErrorPersistence() throws {
@@ -121,6 +201,8 @@ struct BarStateAppSmokeTests {
             "common.save",
             "popover.refresh_all",
             "editor.validation.valid_https_url",
+            "editor.validation.promql_required",
+            "error.prometheus_multiple_series",
             "error.script_timeout"
         ] {
             precondition(L10n.string(key) != key, "missing localized value for \(key)")

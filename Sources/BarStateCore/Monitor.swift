@@ -1,5 +1,19 @@
 import Foundation
 
+public enum MonitorSourceKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case httpAPI
+    case prometheus
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .httpAPI: "HTTP API"
+        case .prometheus: "Prometheus"
+        }
+    }
+}
+
 public enum ParserKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case jsonPath
     case javaScript
@@ -11,6 +25,35 @@ public enum ParserKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .jsonPath: "JSONPath"
         case .javaScript: "JavaScript"
         }
+    }
+}
+
+public enum HTTPAuthenticationKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none
+    case basic
+
+    public var id: String { rawValue }
+}
+
+public struct HTTPAuthentication: Codable, Equatable, Sendable {
+    public var kind: HTTPAuthenticationKind
+    public var username: String
+    public var password: String
+
+    public init(
+        kind: HTTPAuthenticationKind = .none,
+        username: String = "",
+        password: String = ""
+    ) {
+        self.kind = kind
+        self.username = username
+        self.password = password
+    }
+
+    public var authorizationHeaderValue: String? {
+        guard kind == .basic else { return nil }
+        let credentials = Data("\(username):\(password)".utf8).base64EncodedString()
+        return "Basic \(credentials)"
     }
 }
 
@@ -112,6 +155,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
     public var lastValue: Double?
     public var lastSuccessAt: Date?
     public var lastAttemptAt: Date?
+    public var lastRequestDuration: TimeInterval?
     public var lastResponse: HTTPResponseSnapshot?
     public var consecutiveFailures: Int
     public var lastError: MonitoringError?
@@ -120,6 +164,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         lastValue: Double? = nil,
         lastSuccessAt: Date? = nil,
         lastAttemptAt: Date? = nil,
+        lastRequestDuration: TimeInterval? = nil,
         lastResponse: HTTPResponseSnapshot? = nil,
         lastResponseText: String? = nil,
         lastResponseAt: Date? = nil,
@@ -132,6 +177,9 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         self.lastResponse = lastResponse ?? Self.legacyResponse(
             text: lastResponseText,
             at: lastResponseAt
+        )
+        self.lastRequestDuration = Self.normalizedDuration(
+            lastRequestDuration ?? self.lastResponse?.requestDuration
         )
         self.consecutiveFailures = consecutiveFailures
         self.lastError = lastError
@@ -146,13 +194,17 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         at date: Date,
         response: HTTPResponseSnapshot? = nil,
         responseText: String? = nil,
-        responseAt: Date? = nil
+        responseAt: Date? = nil,
+        requestDuration: TimeInterval? = nil
     ) {
         lastValue = value
         lastSuccessAt = date
         lastAttemptAt = date
         consecutiveFailures = 0
         lastError = nil
+        lastRequestDuration = Self.normalizedDuration(
+            requestDuration ?? response?.requestDuration
+        )
         recordResponse(response, legacyText: responseText, at: responseAt)
     }
 
@@ -161,11 +213,15 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         at date: Date,
         response: HTTPResponseSnapshot? = nil,
         responseText: String? = nil,
-        responseAt: Date? = nil
+        responseAt: Date? = nil,
+        requestDuration: TimeInterval? = nil
     ) {
         lastAttemptAt = date
         consecutiveFailures += 1
         lastError = error
+        lastRequestDuration = Self.normalizedDuration(
+            requestDuration ?? response?.requestDuration
+        )
         recordResponse(response, legacyText: responseText, at: responseAt)
     }
 
@@ -199,10 +255,16 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         )
     }
 
+    private static func normalizedDuration(_ duration: TimeInterval?) -> TimeInterval? {
+        guard let duration, duration.isFinite, duration >= 0 else { return nil }
+        return duration
+    }
+
     private enum CodingKeys: String, CodingKey {
         case lastValue
         case lastSuccessAt
         case lastAttemptAt
+        case lastRequestDuration
         case lastResponse
         case lastResponseText
         case lastResponseAt
@@ -223,6 +285,10 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
                 at: try container.decodeIfPresent(Date.self, forKey: .lastResponseAt)
             )
         }
+        lastRequestDuration = Self.normalizedDuration(
+            try container.decodeIfPresent(TimeInterval.self, forKey: .lastRequestDuration)
+                ?? lastResponse?.requestDuration
+        )
         consecutiveFailures = try container.decodeIfPresent(Int.self, forKey: .consecutiveFailures) ?? 0
         if let failure = try container.decodeIfPresent(
             MonitoringError.self,
@@ -244,6 +310,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         try container.encodeIfPresent(lastValue, forKey: .lastValue)
         try container.encodeIfPresent(lastSuccessAt, forKey: .lastSuccessAt)
         try container.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
+        try container.encodeIfPresent(lastRequestDuration, forKey: .lastRequestDuration)
         try container.encodeIfPresent(lastResponse, forKey: .lastResponse)
         try container.encode(consecutiveFailures, forKey: .consecutiveFailures)
         try container.encodeIfPresent(lastError, forKey: .lastFailure)
@@ -253,16 +320,23 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
 public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public static let minimumRefreshInterval: TimeInterval = 30
     public static let maximumRefreshInterval: TimeInterval = 365 * 24 * 60 * 60
+    public static let minimumRequestTimeout: TimeInterval = 1
+    public static let defaultRequestTimeout: TimeInterval = 10
+    public static let maximumRequestTimeout: TimeInterval = 60
     public static let valuePlaceholder = "${value}"
 
     public var id: UUID
     public var name: String
+    public var sourceKind: MonitorSourceKind
     public var urlString: String
+    public var promQL: String
+    public var authentication: HTTPAuthentication
     public var requestHeaders: [RequestHeader]
     public var parser: ParserConfiguration
     public var displayTemplate: String
     public var refreshInterval: TimeInterval
     public var refreshIntervalUnit: RefreshIntervalUnit
+    public var requestTimeout: TimeInterval
     public var isEnabled: Bool
     public var showsInMenuBar: Bool
     public var order: Int
@@ -271,7 +345,10 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public init(
         id: UUID = UUID(),
         name: String,
+        sourceKind: MonitorSourceKind = .httpAPI,
         urlString: String = "https://",
+        promQL: String = "",
+        authentication: HTTPAuthentication = .init(),
         requestHeaders: [RequestHeader] = [],
         parser: ParserConfiguration = .init(),
         displayTemplate: String? = nil,
@@ -279,6 +356,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         unit: String = "",
         refreshInterval: TimeInterval = 60,
         refreshIntervalUnit: RefreshIntervalUnit = .seconds,
+        requestTimeout: TimeInterval = Monitor.defaultRequestTimeout,
         isEnabled: Bool = true,
         showsInMenuBar: Bool = false,
         order: Int = 0,
@@ -286,12 +364,16 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     ) {
         self.id = id
         self.name = name
+        self.sourceKind = sourceKind
         self.urlString = urlString
+        self.promQL = promQL
+        self.authentication = authentication
         self.requestHeaders = requestHeaders
         self.parser = parser
         self.displayTemplate = displayTemplate ?? "\(label)\(Self.valuePlaceholder)\(unit)"
         self.refreshInterval = Self.normalizedRefreshInterval(refreshInterval)
         self.refreshIntervalUnit = refreshIntervalUnit
+        self.requestTimeout = Self.normalizedRequestTimeout(requestTimeout)
         self.isEnabled = isEnabled
         self.showsInMenuBar = showsInMenuBar
         self.order = order
@@ -345,7 +427,10 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id
         case name
+        case sourceKind
         case urlString
+        case promQL
+        case authentication
         case requestHeaders
         case parser
         case displayTemplate
@@ -353,6 +438,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         case unit
         case refreshInterval
         case refreshIntervalUnit
+        case requestTimeout
         case isEnabled
         case showsInMenuBar
         case order
@@ -363,7 +449,16 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
+        sourceKind = try container.decodeIfPresent(
+            MonitorSourceKind.self,
+            forKey: .sourceKind
+        ) ?? .httpAPI
         urlString = try container.decode(String.self, forKey: .urlString)
+        promQL = try container.decodeIfPresent(String.self, forKey: .promQL) ?? ""
+        authentication = try container.decodeIfPresent(
+            HTTPAuthentication.self,
+            forKey: .authentication
+        ) ?? .init()
         requestHeaders = try container.decodeIfPresent([RequestHeader].self, forKey: .requestHeaders) ?? []
         parser = try container.decode(ParserConfiguration.self, forKey: .parser)
         if let storedTemplate = try container.decodeIfPresent(String.self, forKey: .displayTemplate) {
@@ -380,6 +475,10 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
             RefreshIntervalUnit.self,
             forKey: .refreshIntervalUnit
         ) ?? .seconds
+        requestTimeout = Self.normalizedRequestTimeout(
+            try container.decodeIfPresent(TimeInterval.self, forKey: .requestTimeout)
+                ?? Self.defaultRequestTimeout
+        )
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
         showsInMenuBar = try container.decode(Bool.self, forKey: .showsInMenuBar)
         order = try container.decode(Int.self, forKey: .order)
@@ -390,12 +489,16 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+        try container.encode(sourceKind, forKey: .sourceKind)
         try container.encode(urlString, forKey: .urlString)
+        try container.encode(promQL, forKey: .promQL)
+        try container.encode(authentication, forKey: .authentication)
         try container.encode(requestHeaders, forKey: .requestHeaders)
         try container.encode(parser, forKey: .parser)
         try container.encode(displayTemplate, forKey: .displayTemplate)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(refreshIntervalUnit, forKey: .refreshIntervalUnit)
+        try container.encode(requestTimeout, forKey: .requestTimeout)
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(showsInMenuBar, forKey: .showsInMenuBar)
         try container.encode(order, forKey: .order)
@@ -405,6 +508,11 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public static func normalizedRefreshInterval(_ interval: TimeInterval) -> TimeInterval {
         guard interval.isFinite else { return minimumRefreshInterval }
         return min(max(minimumRefreshInterval, interval), maximumRefreshInterval)
+    }
+
+    public static func normalizedRequestTimeout(_ timeout: TimeInterval) -> TimeInterval {
+        guard timeout.isFinite else { return defaultRequestTimeout }
+        return min(max(minimumRequestTimeout, timeout), maximumRequestTimeout)
     }
 }
 

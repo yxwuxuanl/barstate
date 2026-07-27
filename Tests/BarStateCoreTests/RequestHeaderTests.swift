@@ -73,6 +73,106 @@ struct RequestHeaderTests {
         #expect(request.value(forHTTPHeaderField: "X-API-Key") == "secret")
     }
 
+    @Test func buildsBasicAuthenticationHeader() throws {
+        let monitor = Monitor(
+            name: "Basic Auth",
+            urlString: "https://api.example.com/value",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "Aladdin",
+                password: "open sesame"
+            )
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+
+        #expect(
+            request.value(forHTTPHeaderField: "Authorization")
+                == "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        )
+    }
+
+    @Test func permitsColonsInBasicAuthenticationPassword() throws {
+        let monitor = Monitor(
+            name: "Basic Auth",
+            urlString: "https://api.example.com/value",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "user",
+                password: "part:part"
+            )
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        let encoded = Data("user:part:part".utf8).base64EncodedString()
+
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Basic \(encoded)")
+    }
+
+    @Test func rejectsColonInBasicAuthenticationUsername() {
+        let monitor = Monitor(
+            name: "Basic Auth",
+            urlString: "https://api.example.com/value",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "domain:user",
+                password: "secret"
+            )
+        )
+
+        #expect(throws: MonitoringError.basicAuthenticationUsernameContainsColon) {
+            try HTTPRequestBuilder.makeRequest(for: monitor)
+        }
+    }
+
+    @Test func rejectsCustomAuthorizationHeaderWhenBasicAuthenticationIsEnabled() {
+        let monitor = Monitor(
+            name: "Basic Auth",
+            urlString: "https://api.example.com/value",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "user",
+                password: "secret"
+            ),
+            requestHeaders: [
+                RequestHeader(name: "authorization", value: "Bearer token")
+            ]
+        )
+
+        #expect(throws: MonitoringError.authorizationHeaderConflict) {
+            try HTTPRequestBuilder.makeRequest(for: monitor)
+        }
+    }
+
+    @Test func disabledBasicAuthenticationDoesNotAddAuthorizationHeader() throws {
+        let monitor = Monitor(
+            name: "No Auth",
+            urlString: "https://api.example.com/value",
+            authentication: HTTPAuthentication(
+                kind: .none,
+                username: "unused",
+                password: "unused"
+            )
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test func appliesAndBoundsTheConfiguredRequestTimeout() throws {
+        let monitor = Monitor(
+            name: "timeout",
+            urlString: "https://api.example.com/value",
+            requestTimeout: 24
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        #expect(request.timeoutInterval == 24)
+        #expect(Monitor(name: "minimum", requestTimeout: 0).requestTimeout == 1)
+        #expect(Monitor(name: "maximum", requestTimeout: 120).requestTimeout == 60)
+    }
+
     @Test func rejectsDuplicateHeaderNamesIgnoringCase() {
         let monitor = Monitor(
             name: "重复 Header",
@@ -104,5 +204,55 @@ struct RequestHeaderTests {
         #expect(request.value(forHTTPHeaderField: "X-Time-1720000000") == "Bearer 1720000000")
         #expect(monitor.urlString.contains("${TIMESTAMP}"))
         #expect(monitor.requestHeaders[0].value == "Bearer ${TIMESTAMP}")
+    }
+
+    @Test func buildsPrometheusInstantQueryRequest() throws {
+        let monitor = Monitor(
+            name: "5xx QPS",
+            sourceKind: .prometheus,
+            urlString: "https://metrics.example.com/prometheus?tenant=barstate",
+            promQL: #"sum(rate(http_requests_total{status=~"5.."}[5m]))"#
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        let components = try #require(URLComponents(url: #require(request.url), resolvingAgainstBaseURL: false))
+
+        #expect(request.httpMethod == "GET")
+        #expect(components.path == "/prometheus/api/v1/query")
+        #expect(components.queryItems?.first(where: { $0.name == "tenant" })?.value == "barstate")
+        #expect(components.queryItems?.first(where: { $0.name == "query" })?.value == monitor.promQL)
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+    }
+
+    @Test func doesNotDuplicatePrometheusQueryPath() throws {
+        let monitor = Monitor(
+            name: "up",
+            sourceKind: .prometheus,
+            urlString: "https://metrics.example.com/api/v1/query",
+            promQL: "sum(up)"
+        )
+
+        let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        #expect(request.url?.path == "/api/v1/query")
+    }
+
+    @Test func permitsHTTPOnlyForLoopbackEndpoints() throws {
+        let localMonitor = Monitor(
+            name: "local",
+            sourceKind: .prometheus,
+            urlString: "http://127.0.0.1:9090",
+            promQL: "sum(up)"
+        )
+        #expect(try HTTPRequestBuilder.makeRequest(for: localMonitor).url?.scheme == "http")
+
+        let remoteMonitor = Monitor(
+            name: "remote",
+            sourceKind: .prometheus,
+            urlString: "http://metrics.example.com",
+            promQL: "sum(up)"
+        )
+        #expect(throws: MonitoringError.insecureURL) {
+            try HTTPRequestBuilder.makeRequest(for: remoteMonitor)
+        }
     }
 }

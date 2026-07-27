@@ -1,87 +1,244 @@
 # BarState
 
-BarState 是一个 macOS 15+ 菜单栏工具。它周期性请求用户配置的 HTTPS API，通过简化 JSONPath 或受隔离的完整 JavaScript 函数提取数字，并将选中的监控项显示为可独立拖动的纯文字状态栏项目。
+[简体中文](README.md) | [English](README_EN.md)
 
-界面支持简体中文和英文。可在 BarState 设置窗口底部选择“跟随系统”“简体中文”或“English”，退出并重新打开应用后生效；选择“跟随系统”时也支持 macOS 的应用语言设置。
+BarState 是一款 macOS 菜单栏监控工具，提供两种独立的使用方式：发送 HTTP 请求并解析 API 响应，或执行 PromQL 查询读取 Prometheus 指标。两种方式取得的数值都可以直接显示在菜单栏中。
+
+需要完整的操作说明时，请参阅 [BarState 使用指南](docs/USER_GUIDE.md)。
 
 ## 界面预览
 
-### 状态栏与监控弹窗
+![BarState 设置面板、菜单栏状态与监控列表](docs/images/barstate-app-overview-zh.png)
 
-<p align="center">
-  <img src="docs/images/barstate-menubar-popover.png" alt="BarState 状态栏项目与监控弹窗" width="520">
-</p>
+## 系统要求
 
-### 设置面板
-
-![BarState 监控项设置面板](docs/images/barstate-settings.png)
+- macOS 15 或更高版本
+- Apple Silicon（M1 或更新的 Mac）和 Intel Mac 均为首要支持平台
 
 ## 下载与安装
 
 > [!WARNING]
-> 当前 Release 提供的是未使用 Apple Developer ID 签名、也未经过 Apple 公证的测试版本。macOS 无法验证其开发者身份或确认文件是否经过篡改。请只从本仓库的 [Releases](../../releases) 页面下载，不要运行第三方重新打包的版本。
+> 当前 Release 未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只从本仓库的 Releases 页面下载安装包。
 
-当前预发布包要求 macOS 15 或更高版本，并且仅支持 Apple Silicon（M1 或更新的 Mac）。Intel Mac 用户需要暂时从源码自行构建。
+1. 在 [Releases](../../releases) 页面下载与 Mac 架构对应的安装包：
+   - Apple Silicon：`BarState-macos-arm64.dmg`
+   - Intel：`BarState-macos-x86_64.dmg`
+2. 打开下载的 DMG，将 `BarState.app` 拖入“应用程序”文件夹。
+3. 双击 `BarState.app` 尝试启动。
+4. 如果 macOS 阻止打开，请进入“系统设置” → “隐私与安全性”。
+5. 在“安全性”区域找到 BarState，点击“仍要打开”，然后使用登录密码或 Touch ID 确认。
 
-1. 在 [Releases](../../releases) 页面下载最新的 `BarState-macos-arm64.dmg`。
-2. 打开 DMG，将 `BarState.app` 拖入“应用程序”文件夹。
-3. 双击 `BarState.app` 尝试打开。由于当前版本未经签名和公证，macOS 可能会阻止启动。
-4. 打开“系统设置” → “隐私与安全性”，滚动到“安全性”区域，找到刚刚被阻止的 BarState，然后点击“仍要打开”。
-5. 使用登录密码或 Touch ID 确认，再次点击“打开”。macOS 记住这次选择后，后续可以正常双击启动。
+也可以在确认应用来自本仓库 Releases 后，通过终端移除 BarState 的下载隔离标记：
 
-“仍要打开”通常只会在尝试启动应用后的一段时间内出现。不要为安装 BarState 而全局关闭 Gatekeeper。有关这一流程和风险的说明，请参阅 [Apple 官方指南](https://support.apple.com/guide/mac-help/mh40616/mac)。
+```sh
+xattr -dr com.apple.quarantine "/Applications/BarState.app"
+```
 
-## 快速开始
+此命令只作用于 BarState，不会全局关闭 Gatekeeper。
 
-1. 启动 BarState，点击菜单栏中的 `BarState`，然后打开设置。
-2. 新建监控项，填写名称和一个 `HTTPS` 接口地址。BarState 当前只发送 `GET` 请求。
-3. 如果接口需要认证，可以添加 Request Header。请先阅读下方的“隐私与本地数据”说明。
-4. 点击“测试请求”，确认接口返回了预期内容。
-5. 选择 JSONPath 或 JavaScript，填写解析表达式，然后点击“测试解析”。
-6. 使用包含 `${value}` 的显示模板，例如 `气温${value}℃`。
-7. 设置刷新周期，保存监控项，并开启“显示在菜单栏”。
+不需要也不建议为了运行 BarState 而全局关闭 Gatekeeper。
 
-## 隐私与本地数据
+## HTTP 请求监控
 
-BarState 不提供云端账户，监控配置保存在当前用户的 `~/Library/Application Support/BarState/` 目录中。当前版本会将 Request Header 的值和最近一次完整响应以明文写入本地配置文件，文件权限限制为仅当前用户可读写。
+HTTP 请求监控适合从普通 API 响应中提取数值。BarState 定时发送请求，再通过 JSONPath 或 JavaScript 解析响应。
 
-在敏感 Header 迁移到 macOS 钥匙串之前，请谨慎填写长期有效的 API Token、Cookie 或其他高权限凭据。建议使用权限最小、可随时撤销的专用凭据，并避免监控会返回高度敏感个人信息的接口。
+### 创建 HTTP 请求监控
 
-如需卸载，请先退出 BarState，再将 `BarState.app` 移到废纸篓。如果还要删除全部本地配置，请同时删除 `~/Library/Application Support/BarState/`；此操作无法撤销。
+1. 启动 BarState，点击菜单栏中的 `BarState`，选择“设置…”。
+2. 点击左侧的“新增”，将“数据源”保持为 `API`。
+3. 填写监控项名称和 HTTPS 接口地址。
+4. 如有需要，配置 Basic Authentication 或添加请求头。
+5. 点击“测试请求”，确认接口返回了预期内容。
+6. 选择 JSONPath 或 JavaScript 解析方式，填写解析表达式。
+7. 点击“测试解析”，确认能够得到数值。
+8. 设置显示模板和刷新周期，然后保存。
+9. 开启“启用监控”；需要在菜单栏直接显示结果时，再开启“显示在菜单栏”。
 
-## MVP 行为
+新建 HTTP 请求监控必须先完成请求测试并成功解析，之后才能保存。
 
-- 每个选中的监控项对应一个独立 `NSStatusItem`，可按住 Command 在菜单栏中拖动。
-- 点击任意状态项都会打开同一个监控列表。
-- 监控列表在点击外部、切换到其他应用或应用失去焦点时自动关闭。
-- 请求固定为 HTTPS GET；每个监控项可配置多组 Request Header，不支持请求体。
-- URL、Request Header 名称和值支持 `${TIMESTAMP}`，每次请求时替换为同一个 Unix 秒级时间戳。
-- 设置页以可用变量列表展示 `${TIMESTAMP}`，点击变量名或复制图标即可复制。
-- JSONPath 支持 `$`、属性访问与数组下标。
-- JSON 响应可使用 JSONPath 或 JavaScript；非 JSON 文本响应只能使用 JavaScript，编辑器中的 JSDoc 会标注当前 `response` 类型。
-- JavaScript 在无网络权限的 XPC 服务中执行，并带有硬超时。
-- JSONPath 和 JavaScript 的解析结果接受数字及数字字符串，例如 `30`、`"30.1"`。
-- 显示内容使用 `${value}` 模板，例如 `气温${value}℃`。
-- “测试请求”与“测试解析”相互独立：前者只更新响应预览，后者使用当前响应且不会重新联网。
-- 响应区持续展示最近一次更新或手动测试收到的 Body、请求时间、状态码、Content-Type，以及可折叠的完整 HTTP 状态行和响应头；未收到新响应的网络失败不会清空旧响应。
-- 新建监控项必须测试解析成功后才能保存；已有监控项修改解析配置后也必须重新测试成功。
-- 修改解析方式或表达式不会收起测试结果，旧结果会保留并标记为需要重新测试。
-- 前两次连续失败保留旧值，第三次起显示 `--`。
-- 刷新周期支持直接输入数值，并可选择秒、分或时；实际周期最低为 30 秒。
-- 新建监控项在保存前仅作为本地草稿存在，不会持久化或启动轮询。
-- 没有选中状态栏监控项时，显示纯文字 `BarState` 入口，避免应用无法再次打开。
-- 设置窗口打开期间会在 Dock 和应用切换器中显示 BarState；关闭设置窗口后自动恢复为纯菜单栏应用。
-- 设置页提供“跟随系统 / 简体中文 / English”语言选项；日期、相对时间、数量与错误信息会使用当前应用语言格式化。
+### 配置 HTTP 请求
 
-## 本地验证
+API 数据源目前只支持 HTTPS `GET` 请求，不支持 HTTP、其他请求方法或请求体。
+
+接口使用 HTTP Basic Authentication 时，在“认证方式”中选择 `Basic Authentication`，然后填写用户名和密码。BarState 会自动生成 `Authorization` 请求头。
+
+Bearer Token、API Key 等其他认证方式可以在“请求头”区域添加多组 Header，例如：
+
+```text
+Authorization: Bearer your-token
+```
+
+URL、请求头名称和请求头值都可以使用 `${TIMESTAMP}`。发送请求时，它会被替换为当前 Unix 秒级时间戳。
+
+启用 Basic Authentication 时，不能再手动添加 `Authorization` 请求头。
+
+配置完成后点击“测试请求”。响应预览会显示 Body、状态码、Content-Type、请求时间和响应头等信息。
+
+### 解析 HTTP 响应
+
+#### JSONPath
+
+JSON 响应可以使用简化 JSONPath，支持根节点 `$`、属性访问和数组下标。
+
+例如，接口返回：
+
+```json
+{
+  "data": {
+    "temperatures": [23.6]
+  }
+}
+```
+
+使用以下表达式可取得 `23.6`：
+
+```text
+$.data.temperatures[0]
+```
+
+#### JavaScript
+
+需要自定义处理逻辑，或接口返回的不是 JSON 时，请使用 JavaScript。函数接收 `response` 参数，并返回数字或数字字符串。
+
+```javascript
+function(response) {
+    return response.data.temperatures[0]
+}
+```
+
+如果响应是普通文本，可以直接处理字符串：
+
+```javascript
+function(response) {
+    return Number(response.trim())
+}
+```
+
+修改解析方式或表达式后，需要再次点击“测试解析”并成功，才能保存新配置。
+
+### 三个常用场景
+
+以下解析表达式基于示例响应，实际使用时需要按照接口返回的数据结构调整。
+
+1. 查看 API 剩余额度：
+
+   ```json
+   {"data":{"remaining":842}}
+   ```
+
+   使用 JSONPath `$.data.remaining`，显示模板可设置为 `额度 ${value}`。
+
+2. 查看实时汇率：
+
+   ```json
+   {"rates":{"CNY":7.23}}
+   ```
+
+   使用 JSONPath `$.rates.CNY`，显示模板可设置为 `USD/CNY ${value}`。
+
+3. 查看返回纯文本的温度传感器：
+
+   ```text
+   23.6
+   ```
+
+   使用 JavaScript 将文本转换为数字：
+
+   ```javascript
+   function(response) {
+       return Number(response.trim())
+   }
+   ```
+
+   显示模板可设置为 `温度 ${value}℃`。
+
+## PromQL 查询监控
+
+PromQL 查询监控用于直接读取 Prometheus 指标，不需要配置 JSONPath 或 JavaScript。BarState 会定时调用 Prometheus 即时查询接口，并将查询得到的单个数值显示在菜单栏中。
+
+### 创建 PromQL 查询监控
+
+1. 新建监控项，将“数据源”切换为 `Prometheus`。
+2. 填写 Prometheus 地址和 PromQL。
+3. 如有需要，配置 Basic Authentication 或添加认证请求头。
+4. 点击“测试查询”，确认查询能够得到单个数值。
+5. 设置显示模板和刷新周期，保存并启用监控。
+
+BarState 会在 Prometheus 地址后自动补全 `/api/v1/query`。远程地址必须使用 HTTPS；`localhost`、`127.x.x.x` 和 `::1` 等本机环回地址可以使用 HTTP。
+
+PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。如果查询返回多条时间序列，请使用 `sum()`、`avg()`、`max()` 等聚合函数，或添加更精确的标签筛选。新建监控项或修改查询配置后，需要先点击“测试查询”并成功，才能保存。
+
+### 三个常用场景
+
+1. 查看 API 每秒请求量：
+
+   ```promql
+   sum(rate(http_requests_total[5m]))
+   ```
+
+2. 查看 API 的 5xx 错误率（百分比）：
+
+   ```promql
+   100 * sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+   ```
+
+3. 查看所有监控目标的当前在线率（百分比）：
+
+   ```promql
+   100 * avg(up)
+   ```
+
+## 显示与刷新
+
+显示模板必须包含 `${value}`，它会被替换为解析结果。例如：
+
+```text
+气温 ${value}℃
+```
+
+刷新周期可以使用秒、分或时，允许范围为 30 秒至 365 天。
+
+点击任意 BarState 菜单栏项目可以查看全部监控项、当前状态和最近更新时间，也可以手动刷新所有已启用的监控项。按住 Command 键拖动菜单栏项目，可以调整它们的位置。
+
+## 其他设置
+
+- “登录时启动”：登录 macOS 后自动打开 BarState。
+- “语言”：支持跟随系统、简体中文和 English；更改后重新启动 BarState 生效。
+- 左侧监控项列表可以调整顺序或删除不再需要的监控项。
+
+## 本地数据与卸载
+
+监控配置保存在：
+
+```text
+~/Library/Application Support/BarState/
+```
+
+Basic Authentication 凭据、请求头内容和最近一次完整响应会保存在本机。请避免使用长期有效或权限过高的凭据，并尽量使用可随时撤销的专用凭据。
+
+卸载步骤：
+
+1. 退出 BarState。
+2. 将 `BarState.app` 移到废纸篓。
+3. 如需同时删除全部监控配置，再删除 `~/Library/Application Support/BarState/`。
+
+删除配置目录后无法恢复其中的数据。
+
+## 从源码运行
+
+在项目根目录执行：
 
 ```sh
 ./scripts/build-app.sh
-./scripts/check-localizations.sh
-./scripts/test-app-smoke.sh
 open .build/BarState.app
 ```
 
-完整 Xcode 环境中也可以使用 `swift test` 运行测试目标。仓库自带的打包脚本会直接使用 macOS SDK 编译，因此在只有 Command Line Tools 的机器上也可生成应用。
+运行完整检查：
 
-当前应用使用临时 Bundle ID `com.barstate.BarState`，打包脚本只进行临时签名。后续正式分发前应替换为持有者控制的 Bundle ID，并使用 Apple Developer ID 证书签名及提交公证。
+```sh
+swift test
+./scripts/check-localizations.sh
+./scripts/test-app-smoke.sh
+```
+
+构建完成后的应用位于 `.build/BarState.app`。

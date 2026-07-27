@@ -61,4 +61,65 @@ struct MonitorCompatibilityTests {
 
         #expect(decoded.runtime.lastError == .legacy("legacy failure"))
     }
+
+    @Test func decodesLegacyMonitorAsHTTPAPI() throws {
+        let monitor = Monitor(name: "legacy")
+        let encoded = try JSONEncoder().encode(monitor)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "sourceKind")
+        object.removeValue(forKey: "promQL")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
+
+        #expect(decoded.sourceKind == .httpAPI)
+        #expect(decoded.promQL.isEmpty)
+    }
+
+    @Test func defaultsLegacyMonitorRequestTimeoutToTenSeconds() throws {
+        let monitor = Monitor(name: "legacy", requestTimeout: 24)
+        let encoded = try JSONEncoder().encode(monitor)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "requestTimeout")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
+
+        #expect(decoded.requestTimeout == Monitor.defaultRequestTimeout)
+    }
+
+    @Test func defaultsLegacyMonitorAuthenticationToNone() throws {
+        let monitor = Monitor(
+            name: "legacy",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "user",
+                password: "secret"
+            )
+        )
+        let encoded = try JSONEncoder().encode(monitor)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "authentication")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
+
+        #expect(decoded.authentication == HTTPAuthentication())
+    }
+
+    @Test func roundTripsBasicAuthenticationConfiguration() throws {
+        let monitor = Monitor(
+            name: "Basic Auth",
+            authentication: HTTPAuthentication(
+                kind: .basic,
+                username: "用户",
+                password: "密碼:secret"
+            )
+        )
+
+        let data = try JSONEncoder().encode(monitor)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: data)
+
+        #expect(decoded.authentication == monitor.authentication)
+    }
 }

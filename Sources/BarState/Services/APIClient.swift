@@ -4,6 +4,7 @@ import Foundation
 struct RequestOutcome: Sendable {
     let response: HTTPResponseSnapshot?
     let requestedAt: Date
+    let requestDuration: TimeInterval
     let error: MonitoringError?
 }
 
@@ -15,6 +16,7 @@ struct DryRunOutcome: Sendable {
 struct FetchOutcome: Sendable {
     let response: HTTPResponseSnapshot?
     let requestedAt: Date
+    let requestDuration: TimeInterval?
     let result: Result<Double, MonitoringError>
 
     var formattedResponse: String? { response?.bodyText }
@@ -22,19 +24,23 @@ struct FetchOutcome: Sendable {
     init(
         response: HTTPResponseSnapshot?,
         requestedAt: Date,
+        requestDuration: TimeInterval? = nil,
         result: Result<Double, MonitoringError>
     ) {
         self.response = response
         self.requestedAt = requestedAt
+        self.requestDuration = requestDuration ?? response?.requestDuration
         self.result = result
     }
 
     init(
         formattedResponse: String?,
         requestedAt: Date,
+        requestDuration: TimeInterval? = nil,
         result: Result<Double, MonitoringError>
     ) {
         self.requestedAt = requestedAt
+        self.requestDuration = requestDuration
         self.result = result
         if let formattedResponse {
             let kind: ResponseBodyKind = (try? JSONSerialization.jsonObject(
@@ -43,6 +49,7 @@ struct FetchOutcome: Sendable {
             )) == nil ? .text : .json
             self.response = HTTPResponseSnapshot(
                 requestedAt: requestedAt,
+                requestDuration: requestDuration,
                 bodyText: formattedResponse,
                 bodyKind: kind
             )
@@ -53,7 +60,7 @@ struct FetchOutcome: Sendable {
 }
 
 actor APIClient: MonitorValueFetching {
-    private struct HTTPPayload {
+    private struct HTTPPayload: @unchecked Sendable {
         let data: Data
         let response: HTTPURLResponse
         let protocolName: String?
@@ -69,8 +76,8 @@ actor APIClient: MonitorValueFetching {
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.waitsForConnectivity = true
-        configuration.timeoutIntervalForRequest = 10
-        configuration.timeoutIntervalForResource = 10
+        configuration.timeoutIntervalForRequest = Monitor.maximumRequestTimeout
+        configuration.timeoutIntervalForResource = Monitor.maximumRequestTimeout
         self.session = URLSession(configuration: configuration)
         self.scriptService = scriptService
     }
@@ -81,6 +88,7 @@ actor APIClient: MonitorValueFetching {
             return FetchOutcome(
                 response: nil,
                 requestedAt: requestOutcome.requestedAt,
+                requestDuration: requestOutcome.requestDuration,
                 result: .failure(requestOutcome.error ?? .invalidHTTPResponse)
             )
         }
@@ -88,6 +96,7 @@ actor APIClient: MonitorValueFetching {
             return FetchOutcome(
                 response: response,
                 requestedAt: requestOutcome.requestedAt,
+                requestDuration: requestOutcome.requestDuration,
                 result: .failure(error)
             )
         }
@@ -95,29 +104,79 @@ actor APIClient: MonitorValueFetching {
         return FetchOutcome(
             response: response,
             requestedAt: requestOutcome.requestedAt,
+            requestDuration: requestOutcome.requestDuration,
             result: await parseValue(from: response, for: monitor)
         )
     }
 
     func request(for monitor: Monitor) async -> RequestOutcome {
         let requestedAt = Date()
+        let startedAt = ProcessInfo.processInfo.systemUptime
         do {
-            let payload = try await fetchPayload(for: monitor)
-            let response = Self.makeSnapshot(from: payload, requestedAt: requestedAt)
+            let payload = try await fetchPayloadBeforeDeadline(for: monitor)
+            let requestDuration = Self.elapsedTime(since: startedAt)
+            let response = Self.makeSnapshot(
+                from: payload,
+                requestedAt: requestedAt,
+                requestDuration: requestDuration
+            )
             let statusCode = payload.response.statusCode
+            let statusError: MonitoringError? = if (200...299).contains(statusCode) {
+                nil
+            } else if monitor.sourceKind == .prometheus,
+                      let prometheusError = PrometheusResponseParser.apiError(from: payload.data)
+            {
+                prometheusError
+            } else {
+                .httpStatus(statusCode)
+            }
             return RequestOutcome(
                 response: response,
                 requestedAt: requestedAt,
-                error: (200...299).contains(statusCode) ? nil : .httpStatus(statusCode)
+                requestDuration: requestDuration,
+                error: statusError
+            )
+        } catch let error as URLError where error.code == .timedOut {
+            return RequestOutcome(
+                response: nil,
+                requestedAt: requestedAt,
+                requestDuration: Self.elapsedTime(since: startedAt),
+                error: .requestTimedOut
             )
         } catch let error as MonitoringError {
-            return RequestOutcome(response: nil, requestedAt: requestedAt, error: error)
+            return RequestOutcome(
+                response: nil,
+                requestedAt: requestedAt,
+                requestDuration: Self.elapsedTime(since: startedAt),
+                error: error
+            )
         } catch {
             return RequestOutcome(
                 response: nil,
                 requestedAt: requestedAt,
+                requestDuration: Self.elapsedTime(since: startedAt),
                 error: .request(error.localizedDescription)
             )
+        }
+    }
+
+    private func fetchPayloadBeforeDeadline(for monitor: Monitor) async throws -> HTTPPayload {
+        try await withThrowingTaskGroup(of: HTTPPayload.self) { group in
+            group.addTask {
+                try await self.fetchPayload(for: monitor)
+            }
+            group.addTask {
+                try await Task<Never, Never>.sleep(
+                    for: .seconds(monitor.requestTimeout)
+                )
+                throw URLError(.timedOut)
+            }
+
+            defer { group.cancelAll() }
+            guard let payload = try await group.next() else {
+                throw MonitoringError.invalidHTTPResponse
+            }
+            return payload
         }
     }
 
@@ -144,30 +203,39 @@ actor APIClient: MonitorValueFetching {
     ) async -> Result<Double, MonitoringError> {
         do {
             let value: Double
-            switch monitor.parser.kind {
-            case .jsonPath:
+            switch monitor.sourceKind {
+            case .prometheus:
                 guard response.bodyKind == .json else {
                     throw MonitoringError.responseBodyNotJSON
                 }
-                let json: Any
-                do {
-                    json = try JSONSerialization.jsonObject(
-                        with: response.bodyData,
-                        options: [.fragmentsAllowed]
-                    )
-                } catch {
-                    throw MonitoringError.invalidJSON(error.localizedDescription)
-                }
-                value = try JSONPathParser.number(at: monitor.parser.jsonPath, in: json)
+                value = try PrometheusResponseParser.number(from: response.bodyData)
 
-            case .javaScript:
-                guard response.bodyKind != .binary else {
-                    throw MonitoringError.unsupportedResponseBody
+            case .httpAPI:
+                switch monitor.parser.kind {
+                case .jsonPath:
+                    guard response.bodyKind == .json else {
+                        throw MonitoringError.responseBodyNotJSON
+                    }
+                    let json: Any
+                    do {
+                        json = try JSONSerialization.jsonObject(
+                            with: response.bodyData,
+                            options: [.fragmentsAllowed]
+                        )
+                    } catch {
+                        throw MonitoringError.invalidJSON(error.localizedDescription)
+                    }
+                    value = try JSONPathParser.number(at: monitor.parser.jsonPath, in: json)
+
+                case .javaScript:
+                    guard response.bodyKind != .binary else {
+                        throw MonitoringError.unsupportedResponseBody
+                    }
+                    value = try await scriptService.evaluate(
+                        responseData: response.bodyData,
+                        scriptBody: monitor.parser.scriptBody
+                    )
                 }
-                value = try await scriptService.evaluate(
-                    responseData: response.bodyData,
-                    scriptBody: monitor.parser.scriptBody
-                )
             }
 
             guard value.isFinite else { throw MonitoringError.nonFiniteNumber }
@@ -222,7 +290,8 @@ actor APIClient: MonitorValueFetching {
 
     nonisolated private static func makeSnapshot(
         from payload: HTTPPayload,
-        requestedAt: Date
+        requestedAt: Date,
+        requestDuration: TimeInterval
     ) -> HTTPResponseSnapshot {
         let body = formatBody(
             payload.data,
@@ -235,6 +304,7 @@ actor APIClient: MonitorValueFetching {
 
         return HTTPResponseSnapshot(
             requestedAt: requestedAt,
+            requestDuration: requestDuration,
             statusCode: statusCode,
             reasonPhrase: reasonPhrase(for: statusCode),
             httpVersion: displayProtocolName(payload.protocolName),
@@ -242,6 +312,10 @@ actor APIClient: MonitorValueFetching {
             bodyText: body.text,
             bodyKind: body.kind
         )
+    }
+
+    nonisolated private static func elapsedTime(since uptime: TimeInterval) -> TimeInterval {
+        max(0, ProcessInfo.processInfo.systemUptime - uptime)
     }
 
     nonisolated private static func formatBody(

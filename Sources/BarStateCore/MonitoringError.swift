@@ -6,7 +6,10 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
     case invalidRequestHeader(String)
     case requestHeaderNameEmpty
     case requestHeaderDuplicate(String)
+    case basicAuthenticationUsernameContainsColon
+    case authorizationHeaderConflict
     case invalidHTTPResponse
+    case requestTimedOut
     case httpStatus(Int)
     case responseTooLarge
     case unsupportedResponseBody
@@ -21,6 +24,12 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
     case valueNotFound
     case resultIsNotNumber
     case nonFiniteNumber
+    case prometheusQueryFailed(String, String)
+    case prometheusQueryRequired
+    case prometheusEmptyResult
+    case prometheusMultipleSeries(Int)
+    case prometheusUnsupportedResultType(String)
+    case prometheusMissingValue
     case script(String)
     case scriptRuntimeUnavailable
     case scriptUnknownException
@@ -41,7 +50,12 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
             L10n.format("error.invalid_header", L10n.string("error.header_name_required"))
         case let .requestHeaderDuplicate(name):
             L10n.format("error.invalid_header", L10n.format("error.header_duplicate", name))
+        case .basicAuthenticationUsernameContainsColon:
+            L10n.string("error.basic_auth_username_colon")
+        case .authorizationHeaderConflict:
+            L10n.string("error.authorization_header_conflict")
         case .invalidHTTPResponse: L10n.string("error.invalid_response")
+        case .requestTimedOut: L10n.string("error.request_timed_out")
         case let .httpStatus(code): L10n.format("error.http_status", Int64(code))
         case .responseTooLarge: L10n.string("error.response_too_large")
         case .unsupportedResponseBody: L10n.string("error.unsupported_body")
@@ -61,6 +75,18 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
         case .valueNotFound: L10n.string("error.value_not_found")
         case .resultIsNotNumber: L10n.string("error.result_not_number")
         case .nonFiniteNumber: L10n.string("error.non_finite_number")
+        case let .prometheusQueryFailed(errorType, message):
+            L10n.format("error.prometheus_query_failed", errorType, message)
+        case .prometheusQueryRequired:
+            L10n.string("error.prometheus_query_required")
+        case .prometheusEmptyResult:
+            L10n.string("error.prometheus_empty_result")
+        case let .prometheusMultipleSeries(count):
+            L10n.format("error.prometheus_multiple_series", Int64(count))
+        case let .prometheusUnsupportedResultType(resultType):
+            L10n.format("error.prometheus_unsupported_result_type", resultType)
+        case .prometheusMissingValue:
+            L10n.string("error.prometheus_missing_value")
         case let .script(message): L10n.format("error.script", message)
         case .scriptRuntimeUnavailable:
             L10n.format("error.script", L10n.string("error.script_runtime_unavailable"))

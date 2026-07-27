@@ -58,6 +58,42 @@ struct PollingEngineTests {
         await engine.stop()
     }
 
+    @Test func staleRequestCannotOverwriteChangedPromQL() async {
+        let fetcher = TestValueFetcher(delays: [
+            "old-query": .milliseconds(250),
+            "new-query": .milliseconds(20)
+        ])
+        let results = ResultRecorder()
+        let id = UUID()
+        let engine = PollingEngine(
+            valueFetcher: fetcher,
+            maximumConcurrentRequests: 1,
+            resultHandler: { _, outcome, _ in
+                await results.append(outcome)
+            }
+        )
+
+        let oldMonitor = Monitor(
+            id: id,
+            name: "Prometheus",
+            sourceKind: .prometheus,
+            urlString: "https://metrics.example.com",
+            promQL: "old-query"
+        )
+        await engine.update(monitors: [oldMonitor])
+        try? await Task.sleep(for: .milliseconds(20))
+
+        var newMonitor = oldMonitor
+        newMonitor.promQL = "new-query"
+        await engine.update(monitors: [newMonitor])
+
+        let receivedNewResult = await waitUntil { await results.count == 1 }
+        let values = await results.values
+        #expect(receivedNewResult)
+        #expect(values == [2])
+        await engine.stop()
+    }
+
     @Test func refreshRequestedWhileRunningIsQueued() async {
         let fetcher = TestValueFetcher(defaultDelay: .milliseconds(80))
         let results = ResultRecorder()
@@ -94,7 +130,9 @@ private actor TestValueFetcher: MonitorValueFetching {
     func fetchValue(for monitor: Monitor) async -> FetchOutcome {
         activeCount += 1
         maximumObservedConcurrency = max(maximumObservedConcurrency, activeCount)
-        let key = monitor.urlString.components(separatedBy: "/").last ?? ""
+        let key = monitor.sourceKind == .prometheus
+            ? monitor.promQL
+            : monitor.urlString.components(separatedBy: "/").last ?? ""
         do {
             try await Task.sleep(for: delays[key] ?? defaultDelay)
         } catch {
@@ -102,7 +140,7 @@ private actor TestValueFetcher: MonitorValueFetching {
         }
         activeCount -= 1
 
-        let value = key == "old" ? 1.0 : 2.0
+        let value = key.hasPrefix("old") ? 1.0 : 2.0
         return FetchOutcome(
             formattedResponse: "{\"value\":\(value)}",
             requestedAt: Date(),

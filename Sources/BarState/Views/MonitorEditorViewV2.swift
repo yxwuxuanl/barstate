@@ -3,28 +3,37 @@ import BarStateCore
 import SwiftUI
 
 private struct EditorRequestConfiguration: Equatable {
+    let sourceKind: MonitorSourceKind
     let urlString: String
+    let promQL: String
+    let authentication: HTTPAuthentication
     let requestHeaders: [RequestHeader]
+    let requestTimeout: TimeInterval
 
     init(monitor: Monitor) {
+        sourceKind = monitor.sourceKind
         urlString = monitor.urlString
+        promQL = monitor.sourceKind == .prometheus ? monitor.promQL : ""
+        authentication = monitor.authentication
         requestHeaders = monitor.requestHeaders
+        requestTimeout = monitor.requestTimeout
     }
 }
 
 private struct EditorTestConfiguration: Equatable {
     let request: EditorRequestConfiguration
-    let parser: ParserConfiguration
+    let parser: ParserConfiguration?
 
     init(monitor: Monitor) {
         request = EditorRequestConfiguration(monitor: monitor)
-        parser = monitor.parser
+        parser = monitor.sourceKind == .httpAPI ? monitor.parser : nil
     }
 }
 
 private struct EditorRequestFailure: Equatable {
     let message: String
     let attemptedAt: Date
+    let requestDuration: TimeInterval?
 }
 
 private enum RequestHeaderLayoutMetrics {
@@ -33,30 +42,63 @@ private enum RequestHeaderLayoutMetrics {
     static let actionsWidth = actionSize * 2 + columnSpacing
 }
 
+func stableRequestHeaderBinding(
+    for header: RequestHeader,
+    in headers: Binding<[RequestHeader]>
+) -> Binding<RequestHeader> {
+    Binding(
+        get: {
+            headers.wrappedValue.first { $0.id == header.id } ?? header
+        },
+        set: { updatedHeader in
+            var currentHeaders = headers.wrappedValue
+            guard let index = currentHeaders.firstIndex(where: { $0.id == header.id }) else {
+                return
+            }
+            var updatedHeader = updatedHeader
+            updatedHeader.id = header.id
+            currentHeaders[index] = updatedHeader
+            headers.wrappedValue = currentHeaders
+        }
+    )
+}
+
+private enum EditorFormLayoutMetrics {
+    static let labelWidth: CGFloat = 128
+}
+
 private struct EditorEditableConfiguration: Equatable {
     let name: String
+    let sourceKind: MonitorSourceKind
     let urlString: String
+    let promQL: String
+    let authentication: HTTPAuthentication
     let requestHeaders: [RequestHeader]
     let parser: ParserConfiguration
     let displayTemplate: String
     let refreshInterval: TimeInterval
     let refreshIntervalUnit: RefreshIntervalUnit
+    let requestTimeout: TimeInterval
 
     init(monitor: Monitor) {
         name = monitor.name
+        sourceKind = monitor.sourceKind
         urlString = monitor.urlString
+        promQL = monitor.promQL
+        authentication = monitor.authentication
         requestHeaders = monitor.requestHeaders
         parser = monitor.parser
         displayTemplate = monitor.displayTemplate
         refreshInterval = monitor.refreshInterval
         refreshIntervalUnit = monitor.refreshIntervalUnit
+        requestTimeout = monitor.requestTimeout
     }
 }
 
 struct MonitorEditorViewV2: View {
     @State private var draft: Monitor
     @State private var refreshIntervalValue: Double
-    @State private var baselineParser: ParserConfiguration
+    @State private var baselineTestConfiguration: EditorTestConfiguration
     @State private var baselineConfiguration: EditorEditableConfiguration
     @State private var requiresInitialSuccessfulTest: Bool
     @State private var validationMessage: String?
@@ -79,6 +121,7 @@ struct MonitorEditorViewV2: View {
     @State private var copiedVariable: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
     @State private var revealedHeaderIDs: Set<UUID> = []
+    @State private var isBasicPasswordRevealed = false
 
     let latestRuntime: MonitorRuntimeState
     let isRefreshing: Bool
@@ -99,9 +142,8 @@ struct MonitorEditorViewV2: View {
         onSave: @escaping (Monitor) -> Void
     ) {
         var editableMonitor = monitor
-        editableMonitor.parser.scriptBody = JavaScriptEvaluator.updatingResponseType(
-            in: monitor.parser.scriptBody,
-            bodyKind: monitor.runtime.lastResponse?.bodyKind
+        editableMonitor.parser.scriptBody = JavaScriptEvaluator.normalizingResponseJSDoc(
+            in: monitor.parser.scriptBody
         )
         if let bodyKind = monitor.runtime.lastResponse?.bodyKind,
            bodyKind != .json,
@@ -116,7 +158,9 @@ struct MonitorEditorViewV2: View {
                 for: editableMonitor.refreshInterval
             )
         )
-        _baselineParser = State(initialValue: editableMonitor.parser)
+        _baselineTestConfiguration = State(
+            initialValue: EditorTestConfiguration(monitor: editableMonitor)
+        )
         _baselineConfiguration = State(
             initialValue: EditorEditableConfiguration(monitor: editableMonitor)
         )
@@ -126,6 +170,9 @@ struct MonitorEditorViewV2: View {
             initialValue: monitor.runtime.lastResponse == nil
                 ? nil
                 : EditorRequestConfiguration(monitor: editableMonitor)
+        )
+        _requestFailure = State(
+            initialValue: Self.runtimeRequestFailure(from: monitor.runtime)
         )
 
         latestRuntime = monitor.runtime
@@ -169,71 +216,31 @@ struct MonitorEditorViewV2: View {
                             }
                         }
 
-                        settingsSection(L10n.string("editor.section.request")) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                formGrid {
-                                    GridRow {
-                                        fieldLabel("HTTPS URL")
-                                        TextField(
-                                            "https://api.example.com/value?ts=${TIMESTAMP}",
-                                            text: $draft.urlString
-                                        )
-                                        .textContentType(.URL)
-                                        .accessibilityLabel("HTTPS URL")
-                                    }
-                                    GridRow {
-                                        fieldLabel(L10n.string("editor.refresh_interval"))
-                                        HStack(spacing: 12) {
-                                            TextField(
-                                                L10n.string("editor.numeric_value"),
-                                                value: refreshIntervalValueBinding,
-                                                format: .number.precision(.fractionLength(0...6))
-                                            )
-                                            .frame(width: 120)
-                                            .accessibilityLabel(
-                                                L10n.string("editor.refresh_interval_value_accessibility")
-                                            )
+                        settingsSection(requestSectionTitle) {
+                            requestConfigurationSection
+                        }
 
-                                            Picker(
-                                                L10n.string("editor.refresh_interval_unit"),
-                                                selection: refreshIntervalUnitBinding
-                                            ) {
-                                                ForEach(RefreshIntervalUnit.allCases) { unit in
-                                                    Text(unit.displayName).tag(unit)
-                                                }
-                                            }
-                                            .pickerStyle(.segmented)
-                                            .labelsHidden()
-                                            .frame(width: 220)
-                                        }
-                                    }
-                                }
-
-                                requestHeadersSection
-                                requestActionRow
-                                ResponsePreviewView(
-                                    response: response,
-                                    isLoading: isRequesting,
-                                    isConfigurationStale: isResponseStale,
-                                    sourceLabel: responseSourceLabel,
-                                    latestRequestFailure: requestFailure
-                                )
+                        if draft.sourceKind == .httpAPI {
+                            settingsSection(L10n.string("editor.section.parser")) {
+                                parserSection
                             }
+                            .id("parser-section")
                         }
-
-                        settingsSection(L10n.string("editor.section.parser")) {
-                            parserSection
-                        }
-                        .id("parser-section")
                     }
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onAppear {
-                    guard ProcessInfo.processInfo.arguments.contains("--preview-parser") else { return }
-                    DispatchQueue.main.async {
-                        proxy.scrollTo("parser-section", anchor: .top)
+                    let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--preview-response") {
+                        DispatchQueue.main.async {
+                            proxy.scrollTo("response-preview", anchor: .bottom)
+                        }
+                    } else if arguments.contains("--preview-parser") {
+                        DispatchQueue.main.async {
+                            proxy.scrollTo("parser-section", anchor: .top)
+                        }
                     }
                 }
             }
@@ -246,7 +253,11 @@ struct MonitorEditorViewV2: View {
             if arguments.contains("--preview-request-failure") {
                 let message = L10n.string("editor.preview_network_error")
                 requestMessage = message
-                requestFailure = EditorRequestFailure(message: message, attemptedAt: Date())
+                requestFailure = EditorRequestFailure(
+                    message: message,
+                    attemptedAt: Date(),
+                    requestDuration: 10
+                )
             }
             if arguments.contains("--preview-parse-success") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -275,6 +286,9 @@ struct MonitorEditorViewV2: View {
             resetParseFeedback()
             savedMessage = nil
         }
+        .onChange(of: draft.authentication.kind) {
+            isBasicPasswordRevealed = false
+        }
         .onChange(of: currentEditableConfiguration) {
             savedMessage = nil
             onDirtyChange(hasUnsavedChanges)
@@ -283,7 +297,10 @@ struct MonitorEditorViewV2: View {
             guard !usesManualResponse, let newResponse else { return }
             response = newResponse
             responseConfiguration = currentRequestConfiguration
-            requestFailure = nil
+        }
+        .onChange(of: latestRuntime.lastAttemptAt) {
+            guard !usesManualResponse else { return }
+            requestFailure = Self.runtimeRequestFailure(from: latestRuntime)
         }
     }
 
@@ -348,6 +365,216 @@ struct MonitorEditorViewV2: View {
         .foregroundStyle(.secondary)
     }
 
+    private var requestSectionTitle: String {
+        draft.sourceKind == .prometheus
+            ? L10n.string("editor.section.query")
+            : L10n.string("editor.section.request")
+    }
+
+    private var requestConfigurationSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            formGrid {
+                GridRow {
+                    fieldLabel(L10n.string("editor.data_source"))
+                    Picker(L10n.string("editor.data_source"), selection: $draft.sourceKind) {
+                        ForEach(MonitorSourceKind.allCases) { sourceKind in
+                            Text(sourceKind.displayName).tag(sourceKind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 280)
+                }
+
+                GridRow(alignment: .top) {
+                    fieldLabel(endpointLabel)
+                    VStack(alignment: .leading, spacing: 7) {
+                        TextField(endpointPlaceholder, text: $draft.urlString)
+                            .textContentType(.URL)
+                            .accessibilityLabel(endpointLabel)
+                        if draft.sourceKind == .prometheus {
+                            Text(L10n.string("editor.prometheus_endpoint_help"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if draft.sourceKind == .prometheus {
+                    GridRow(alignment: .top) {
+                        fieldLabel("PromQL")
+                        VStack(alignment: .leading, spacing: 7) {
+                            TextEditor(text: $draft.promQL)
+                                .font(.system(.body, design: .monospaced))
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 82)
+                                .padding(6)
+                                .background(
+                                    .background.secondary,
+                                    in: RoundedRectangle(cornerRadius: 6)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(.separator.opacity(0.7), lineWidth: 1)
+                                }
+                                .accessibilityLabel("PromQL")
+                            Text(L10n.string("editor.prometheus_query_help"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                GridRow {
+                    fieldLabel(L10n.string("editor.authentication"))
+                    Picker(
+                        L10n.string("editor.authentication"),
+                        selection: $draft.authentication.kind
+                    ) {
+                        Text(L10n.string("editor.authentication_none"))
+                            .tag(HTTPAuthenticationKind.none)
+                        Text("Basic Authentication")
+                            .tag(HTTPAuthenticationKind.basic)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 280)
+                }
+
+                if draft.authentication.kind == .basic {
+                    GridRow {
+                        fieldLabel(L10n.string("editor.basic_auth_username"))
+                        TextField(
+                            L10n.string("editor.basic_auth_username_placeholder"),
+                            text: $draft.authentication.username
+                        )
+                        .textContentType(.username)
+                        .accessibilityLabel(L10n.string("editor.basic_auth_username"))
+                    }
+
+                    GridRow(alignment: .top) {
+                        fieldLabel(L10n.string("editor.basic_auth_password"))
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(spacing: 8) {
+                                Group {
+                                    if isBasicPasswordRevealed {
+                                        TextField(
+                                            L10n.string("editor.basic_auth_password_placeholder"),
+                                            text: $draft.authentication.password
+                                        )
+                                    } else {
+                                        SecureField(
+                                            L10n.string("editor.basic_auth_password_placeholder"),
+                                            text: $draft.authentication.password
+                                        )
+                                    }
+                                }
+                                .textContentType(.password)
+                                .accessibilityLabel(L10n.string("editor.basic_auth_password"))
+
+                                Button {
+                                    isBasicPasswordRevealed.toggle()
+                                } label: {
+                                    Image(systemName: isBasicPasswordRevealed ? "eye.slash" : "eye")
+                                }
+                                .buttonStyle(.borderless)
+                                .frame(
+                                    width: RequestHeaderLayoutMetrics.actionSize,
+                                    height: RequestHeaderLayoutMetrics.actionSize
+                                )
+                                .help(
+                                    isBasicPasswordRevealed
+                                        ? L10n.string("editor.basic_auth_hide_password")
+                                        : L10n.string("editor.basic_auth_show_password")
+                                )
+                                .accessibilityLabel(
+                                    isBasicPasswordRevealed
+                                        ? L10n.string("editor.basic_auth_hide_password")
+                                        : L10n.string("editor.basic_auth_show_password")
+                                )
+                            }
+
+                            Text(L10n.string("editor.basic_auth_storage_help"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                GridRow {
+                    fieldLabel(L10n.string("editor.refresh_interval"))
+                    HStack(spacing: 12) {
+                        TextField(
+                            L10n.string("editor.numeric_value"),
+                            value: refreshIntervalValueBinding,
+                            format: .number.precision(.fractionLength(0...6))
+                        )
+                        .frame(width: 120)
+                        .accessibilityLabel(
+                            L10n.string("editor.refresh_interval_value_accessibility")
+                        )
+
+                        Picker(
+                            L10n.string("editor.refresh_interval_unit"),
+                            selection: refreshIntervalUnitBinding
+                        ) {
+                            ForEach(RefreshIntervalUnit.allCases) { unit in
+                                Text(unit.displayName).tag(unit)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 220)
+                    }
+                }
+
+                GridRow {
+                    fieldLabel(L10n.string("editor.request_timeout"))
+                    HStack(spacing: 8) {
+                        TextField(
+                            L10n.string("editor.numeric_value"),
+                            value: $draft.requestTimeout,
+                            format: .number.precision(.fractionLength(0...2))
+                        )
+                        .frame(width: 120)
+                        .accessibilityLabel(
+                            L10n.string("editor.request_timeout_accessibility")
+                        )
+                        Text(L10n.string("monitor.interval.seconds"))
+                            .foregroundStyle(.secondary)
+                        Text(L10n.string("editor.request_timeout_help"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            requestHeadersSection
+            requestActionRow
+            ResponsePreviewView(
+                response: response,
+                isLoading: isRequesting,
+                isConfigurationStale: isResponseStale,
+                sourceLabel: responseSourceLabel,
+                latestRequestFailure: requestFailure
+            )
+            .id("response-preview")
+        }
+    }
+
+    private var endpointLabel: String {
+        draft.sourceKind == .prometheus
+            ? L10n.string("editor.prometheus_address")
+            : "HTTPS URL"
+    }
+
+    private var endpointPlaceholder: String {
+        draft.sourceKind == .prometheus
+            ? "https://prometheus.example.com"
+            : "https://api.example.com/value?ts=${TIMESTAMP}"
+    }
+
     private var requestHeadersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -377,9 +604,14 @@ struct MonitorEditorViewV2: View {
                 .foregroundStyle(.secondary)
             }
 
-            ForEach($draft.requestHeaders) { $header in
+            ForEach(draft.requestHeaders) { headerSnapshot in
+                let headerBinding = stableRequestHeaderBinding(
+                    for: headerSnapshot,
+                    in: $draft.requestHeaders
+                )
+                let header = headerBinding.wrappedValue
                 HStack(spacing: RequestHeaderLayoutMetrics.columnSpacing) {
-                    TextField("Authorization", text: $header.name)
+                    TextField("Authorization", text: headerBinding.name)
                         .font(.system(.body, design: .monospaced))
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(
@@ -388,9 +620,9 @@ struct MonitorEditorViewV2: View {
 
                     Group {
                         if !header.hasSensitiveValue || revealedHeaderIDs.contains(header.id) {
-                            TextField("Bearer ${TIMESTAMP}", text: $header.value)
+                            TextField("Bearer ${TIMESTAMP}", text: headerBinding.value)
                         } else {
-                            SecureField("Bearer ${TIMESTAMP}", text: $header.value)
+                            SecureField("Bearer ${TIMESTAMP}", text: headerBinding.value)
                         }
                     }
                     .font(.system(.body, design: .monospaced))
@@ -438,8 +670,8 @@ struct MonitorEditorViewV2: View {
                     )
 
                     Button {
-                        draft.requestHeaders.removeAll { $0.id == header.id }
-                        revealedHeaderIDs.remove(header.id)
+                        draft.requestHeaders.removeAll { $0.id == headerSnapshot.id }
+                        revealedHeaderIDs.remove(headerSnapshot.id)
                     } label: {
                         Image(systemName: "xmark")
                     }
@@ -455,7 +687,7 @@ struct MonitorEditorViewV2: View {
                     ))
                 }
                 .onChange(of: header.name) {
-                    revealedHeaderIDs.remove(header.id)
+                    revealedHeaderIDs.remove(headerSnapshot.id)
                 }
             }
 
@@ -478,12 +710,12 @@ struct MonitorEditorViewV2: View {
 
     private var requestActionRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Button(
-                isRequesting
-                    ? L10n.string("editor.requesting")
-                    : L10n.string("editor.test_request")
-            ) {
-                testRequest()
+            Button(requestActionTitle) {
+                if draft.sourceKind == .prometheus {
+                    testPrometheusQuery()
+                } else {
+                    testRequest()
+                }
             }
             .disabled(isRequesting)
 
@@ -496,9 +728,31 @@ struct MonitorEditorViewV2: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if draft.sourceKind == .prometheus, let parseMessage {
+                Label(
+                    parseMessage,
+                    systemImage: parseSucceeded
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.circle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(parseSucceeded ? Color.green : Color.red)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
+    }
+
+    private var requestActionTitle: String {
+        if isRequesting {
+            return draft.sourceKind == .prometheus
+                ? L10n.string("editor.querying")
+                : L10n.string("editor.requesting")
+        }
+        return draft.sourceKind == .prometheus
+            ? L10n.string("editor.test_query")
+            : L10n.string("editor.test_request")
     }
 
     private var parserSection: some View {
@@ -543,7 +797,7 @@ struct MonitorEditorViewV2: View {
             }
 
             GridRow(alignment: .top) {
-                Color.clear.frame(width: 100, height: 1)
+                Color.clear.frame(width: EditorFormLayoutMetrics.labelWidth, height: 1)
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
                     Button(
                         isParsing
@@ -643,7 +897,8 @@ struct MonitorEditorViewV2: View {
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
             .foregroundStyle(.secondary)
-            .frame(width: 100, alignment: .trailing)
+            .lineLimit(1)
+            .frame(width: EditorFormLayoutMetrics.labelWidth, alignment: .trailing)
     }
 
     private func localizedHeaderName(for header: RequestHeader) -> String {
@@ -665,10 +920,19 @@ struct MonitorEditorViewV2: View {
     }
 
     private var responseSourceLabel: String {
-        guard response != nil else { return L10n.string("editor.response_preview") }
-        return usesManualResponse
-            ? L10n.string("editor.manual_response")
-            : L10n.string("editor.latest_response")
+        if draft.sourceKind == .prometheus {
+            guard response != nil else {
+                return L10n.string("editor.prometheus_response_preview")
+            }
+            return usesManualResponse
+                ? L10n.string("editor.manual_query_response")
+                : L10n.string("editor.latest_query_response")
+        } else {
+            guard response != nil else { return L10n.string("editor.response_preview") }
+            return usesManualResponse
+                ? L10n.string("editor.manual_response")
+                : L10n.string("editor.latest_response")
+        }
     }
 
     private var hasUnsavedChanges: Bool {
@@ -680,7 +944,11 @@ struct MonitorEditorViewV2: View {
     }
 
     private var requiresSuccessfulTest: Bool {
-        requiresInitialSuccessfulTest || draft.parser != baselineParser
+        guard !requiresInitialSuccessfulTest else { return true }
+        if draft.sourceKind == .prometheus {
+            return currentTestConfiguration != baselineTestConfiguration
+        }
+        return currentTestConfiguration.parser != baselineTestConfiguration.parser
     }
 
     private var isSuccessfulTestRequiredAndMissing: Bool {
@@ -690,9 +958,13 @@ struct MonitorEditorViewV2: View {
     private var saveRequirementMessage: String? {
         guard isSuccessfulTestRequiredAndMissing else { return nil }
         if requiresInitialSuccessfulTest {
-            return L10n.string("editor.new_monitor_test_required")
+            return draft.sourceKind == .prometheus
+                ? L10n.string("editor.new_prometheus_monitor_test_required")
+                : L10n.string("editor.new_monitor_test_required")
         }
-        return L10n.string("editor.parser_retest_required")
+        return draft.sourceKind == .prometheus
+            ? L10n.string("editor.prometheus_retest_required")
+            : L10n.string("editor.parser_retest_required")
     }
 
     private var isResponseStale: Bool {
@@ -706,7 +978,8 @@ struct MonitorEditorViewV2: View {
     }
 
     private var canTestParsing: Bool {
-        guard response != nil,
+        guard draft.sourceKind == .httpAPI,
+              response != nil,
               !isResponseStale,
               requestFailure == nil,
               !isRequesting,
@@ -791,21 +1064,82 @@ struct MonitorEditorViewV2: View {
                 response = receivedResponse
                 responseConfiguration = configuration
                 usesManualResponse = true
-                requestFailure = nil
-                draft.parser.scriptBody = JavaScriptEvaluator.updatingResponseType(
-                    in: draft.parser.scriptBody,
-                    bodyKind: receivedResponse.bodyKind
+                draft.parser.scriptBody = JavaScriptEvaluator.normalizingResponseJSDoc(
+                    in: draft.parser.scriptBody
                 )
                 if receivedResponse.bodyKind != .json, draft.parser.kind == .jsonPath {
                     draft.parser.kind = .javaScript
                 }
-            } else if let error = outcome.error {
+            }
+            if let error = outcome.error {
                 requestFailure = EditorRequestFailure(
                     message: error.localizedDescription,
-                    attemptedAt: outcome.requestedAt
+                    attemptedAt: outcome.requestedAt,
+                    requestDuration: outcome.requestDuration
                 )
+            } else {
+                requestFailure = nil
             }
             requestMessage = outcome.error?.localizedDescription
+        }
+    }
+
+    private func testPrometheusQuery() {
+        do {
+            try validateRequestConfiguration()
+        } catch {
+            requestMessage = error.localizedDescription
+            return
+        }
+
+        requestTask?.cancel()
+        parseTask?.cancel()
+        isParsing = false
+        resetParseFeedback()
+        requestMessage = nil
+        requestFailure = nil
+        isRequesting = true
+        let monitor = draft
+        let requestConfiguration = currentRequestConfiguration
+        let testConfiguration = currentTestConfiguration
+
+        requestTask = Task {
+            let outcome = await APIClient().fetchValue(for: monitor)
+            guard !Task.isCancelled else { return }
+            isRequesting = false
+            requestTask = nil
+
+            if let receivedResponse = outcome.response {
+                response = receivedResponse
+                responseConfiguration = requestConfiguration
+                usesManualResponse = true
+            }
+
+            switch outcome.result {
+            case let .success(value):
+                parseSucceeded = true
+                requestFailure = nil
+                parseMessage = L10n.format(
+                    "editor.prometheus_query_success",
+                    NumberDisplayFormatter.string(from: value)
+                )
+                successfulTestConfiguration = testConfiguration
+
+            case let .failure(error):
+                parseSucceeded = false
+                parseMessage = error.localizedDescription
+                successfulTestConfiguration = nil
+                if let response = outcome.response, isSuccessfulHTTPResponse(response) {
+                    requestFailure = nil
+                } else {
+                    requestMessage = error.localizedDescription
+                    requestFailure = EditorRequestFailure(
+                        message: error.localizedDescription,
+                        attemptedAt: outcome.requestedAt,
+                        requestDuration: outcome.requestDuration
+                    )
+                }
+            }
         }
     }
 
@@ -884,6 +1218,9 @@ struct MonitorEditorViewV2: View {
     private func save() {
         do {
             try validate()
+            if draft.authentication.kind == .none {
+                draft.authentication = .init()
+            }
             draft.requestHeaders = draft.requestHeaders.map { header in
                 var normalized = header
                 normalized.name = header.normalizedName
@@ -891,7 +1228,7 @@ struct MonitorEditorViewV2: View {
             }
             validationMessage = nil
             savedMessage = L10n.string("editor.saved")
-            baselineParser = draft.parser
+            baselineTestConfiguration = EditorTestConfiguration(monitor: draft)
             baselineConfiguration = EditorEditableConfiguration(monitor: draft)
             requiresInitialSuccessfulTest = false
             onSave(draft)
@@ -914,6 +1251,18 @@ struct MonitorEditorViewV2: View {
         guard draft.refreshInterval <= Monitor.maximumRefreshInterval else {
             throw EditorValidationErrorV2(L10n.string("editor.validation.interval_max"))
         }
+        guard draft.requestTimeout.isFinite,
+              draft.requestTimeout >= Monitor.minimumRequestTimeout
+        else {
+            throw EditorValidationErrorV2(
+                L10n.string("editor.validation.request_timeout_min")
+            )
+        }
+        guard draft.requestTimeout <= Monitor.maximumRequestTimeout else {
+            throw EditorValidationErrorV2(
+                L10n.string("editor.validation.request_timeout_max")
+            )
+        }
         guard draft.displayTemplate.contains(Monitor.valuePlaceholder) else {
             throw EditorValidationErrorV2(
                 L10n.string("editor.validation.template_value_required")
@@ -921,7 +1270,9 @@ struct MonitorEditorViewV2: View {
         }
 
         try validateRequestConfiguration()
-        try validateParserConfiguration()
+        if draft.sourceKind == .httpAPI {
+            try validateParserConfiguration()
+        }
 
         guard !isSuccessfulTestRequiredAndMissing else {
             throw EditorValidationErrorV2(
@@ -931,18 +1282,49 @@ struct MonitorEditorViewV2: View {
     }
 
     private func validateRequestConfiguration() throws {
-        let validationDate = Date()
-        let resolvedURLString = RequestTemplateResolver.resolve(draft.urlString, at: validationDate)
-        guard let components = URLComponents(string: resolvedURLString),
-              components.scheme?.lowercased() == "https",
-              components.host != nil
+        guard draft.requestTimeout.isFinite,
+              draft.requestTimeout >= Monitor.minimumRequestTimeout,
+              draft.requestTimeout <= Monitor.maximumRequestTimeout
         else {
             throw EditorValidationErrorV2(
-                L10n.string("editor.validation.valid_https_url")
+                L10n.string("editor.validation.request_timeout_range")
             )
         }
 
-        var headerNames: Set<String> = []
+        let validationDate = Date()
+        let resolvedURLString = RequestTemplateResolver.resolve(draft.urlString, at: validationDate)
+        guard let components = URLComponents(string: resolvedURLString),
+              HTTPRequestBuilder.isSupportedEndpoint(
+                  components,
+                  allowsLoopbackHTTP: draft.sourceKind == .prometheus
+              )
+        else {
+            throw EditorValidationErrorV2(
+                draft.sourceKind == .prometheus
+                    ? L10n.string("editor.validation.valid_prometheus_url")
+                    : L10n.string("editor.validation.valid_https_url")
+            )
+        }
+
+        if draft.sourceKind == .prometheus,
+           draft.promQL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            throw EditorValidationErrorV2(
+                L10n.string("editor.validation.promql_required")
+            )
+        }
+
+        if draft.authentication.kind == .basic,
+           draft.authentication.username.contains(":")
+        {
+            throw EditorValidationErrorV2(
+                L10n.string("editor.validation.basic_auth_username_colon")
+            )
+        }
+
+        var headerNames: Set<String> = draft.authentication.kind == .basic
+            ? ["authorization"]
+            : []
         for header in draft.requestHeaders {
             let resolvedHeader = RequestHeader(
                 name: RequestTemplateResolver.resolve(header.name, at: validationDate),
@@ -956,6 +1338,13 @@ struct MonitorEditorViewV2: View {
             guard resolvedHeader.isValid else {
                 throw EditorValidationErrorV2(
                     L10n.format("editor.validation.header_invalid", header.name)
+                )
+            }
+            if resolvedHeader.normalizedName.caseInsensitiveCompare("Authorization") == .orderedSame,
+               draft.authentication.kind == .basic
+            {
+                throw EditorValidationErrorV2(
+                    L10n.string("editor.validation.authorization_conflict")
                 )
             }
             guard headerNames.insert(resolvedHeader.normalizedName.lowercased()).inserted else {
@@ -990,6 +1379,19 @@ struct MonitorEditorViewV2: View {
     private func isSuccessfulHTTPResponse(_ response: HTTPResponseSnapshot) -> Bool {
         guard let statusCode = response.statusCode else { return true }
         return (200...299).contains(statusCode)
+    }
+
+    private static func runtimeRequestFailure(
+        from runtime: MonitorRuntimeState
+    ) -> EditorRequestFailure? {
+        guard let error = runtime.lastError, let attemptedAt = runtime.lastAttemptAt else {
+            return nil
+        }
+        return EditorRequestFailure(
+            message: error.localizedDescription,
+            attemptedAt: attemptedAt,
+            requestDuration: runtime.lastRequestDuration
+        )
     }
 }
 
@@ -1185,12 +1587,17 @@ private struct ResponsePreviewView: View {
                     .help(failure.message)
             }
             Spacer(minLength: 8)
-            Text(
-                failure.attemptedAt.formatted(
-                    Date.FormatStyle(date: .omitted, time: .shortened)
-                        .locale(L10n.locale)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(
+                    failure.attemptedAt.formatted(
+                        Date.FormatStyle(date: .omitted, time: .shortened)
+                            .locale(L10n.locale)
+                    )
                 )
-            )
+                if let requestDurationText = requestDurationText(failure.requestDuration) {
+                    Text(requestDurationText)
+                }
+            }
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -1202,39 +1609,57 @@ private struct ResponsePreviewView: View {
     }
 
     private var metadataBar: some View {
-        HStack(spacing: 12) {
-            Text(sourceLabel)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            if isConfigurationStale {
-                Text(L10n.string("response.configuration_changed"))
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Text(sourceLabel)
+                    .font(.subheadline.weight(.semibold))
+                if isConfigurationStale {
+                    Text(L10n.string("response.configuration_changed"))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Spacer(minLength: 12)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                if let statusText = response?.statusText {
+                    Text(statusText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(statusColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            statusColor.opacity(0.1),
+                            in: RoundedRectangle(cornerRadius: 5)
+                        )
+                }
             }
-            Spacer()
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
+
+            HStack(spacing: 8) {
+                Text(responseTimeText)
+                    .layoutPriority(2)
+                if let requestDurationText = requestDurationText(response?.requestDuration) {
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                    Text(requestDurationText)
+                        .layoutPriority(1)
+                }
+                Spacer(minLength: 12)
+                Text(response?.contentType ?? L10n.string("response.unknown_type"))
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 280, alignment: .trailing)
+                    .help(response?.contentType ?? L10n.string("response.no_content_type"))
             }
-            Text(responseTimeText)
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            if let statusText = response?.statusText {
-                Text(statusText)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(statusColor)
-            }
-            Text(response?.contentType ?? L10n.string("response.unknown_type"))
-                .font(.system(.caption, design: .monospaced))
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.background.secondary, in: Capsule())
-                .help(response?.contentType ?? L10n.string("response.no_content_type"))
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
         .background(.background.secondary.opacity(0.28))
     }
 
@@ -1253,6 +1678,17 @@ private struct ResponsePreviewView: View {
                     .locale(L10n.locale)
             )
         )
+    }
+
+    private func requestDurationText(_ duration: TimeInterval?) -> String? {
+        guard let duration, duration.isFinite, duration >= 0 else { return nil }
+        if duration < 1 {
+            return L10n.format(
+                "response.duration_milliseconds",
+                Int64((duration * 1_000).rounded())
+            )
+        }
+        return L10n.format("response.duration_seconds", duration)
     }
 
     private var statusColor: Color {
