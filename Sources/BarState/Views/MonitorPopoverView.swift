@@ -17,6 +17,7 @@ enum MonitorPopoverMetrics {
 struct MonitorPopoverView: View {
     @ObservedObject var store: MonitorStore
     let onRefreshAll: () -> Void
+    let onRefreshMonitor: (UUID) -> Void
     let onOpenSettings: (UUID?) -> Void
 
     var body: some View {
@@ -91,10 +92,10 @@ struct MonitorPopoverView: View {
                     ForEach(Array(store.orderedMonitors.enumerated()), id: \.element.id) { index, monitor in
                         MonitorPopoverRow(
                             monitor: monitor,
-                            isRefreshing: store.pollingStatus.refreshingIDs.contains(monitor.id)
-                        ) {
-                            onOpenSettings(monitor.id)
-                        }
+                            isRefreshing: store.pollingStatus.refreshingIDs.contains(monitor.id),
+                            onOpenSettings: { onOpenSettings(monitor.id) },
+                            onRefresh: { onRefreshMonitor(monitor.id) }
+                        )
 
                         if index < store.orderedMonitors.count - 1 {
                             Divider()
@@ -188,12 +189,14 @@ private struct MonitorPopoverRow: View {
     let monitor: Monitor
     let isRefreshing: Bool
     let onOpenSettings: () -> Void
+    let onRefresh: () -> Void
 
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: onOpenSettings) {
-            HStack(alignment: .center, spacing: 20) {
+        HStack(spacing: 0) {
+            Button(action: onOpenSettings) {
+                HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(monitor.name)
                         .font(.headline)
@@ -233,23 +236,40 @@ private struct MonitorPopoverRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: 150, alignment: .trailing)
+                .frame(width: 138, alignment: .trailing)
+                }
+                .padding(.leading, 28)
+                .padding(.trailing, 12)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: MonitorPopoverMetrics.rowHeight,
+                    maxHeight: MonitorPopoverMetrics.rowHeight
+                )
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint(L10n.string("popover.open_monitor_settings"))
             }
-            .padding(.horizontal, 28)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: MonitorPopoverMetrics.rowHeight,
-                maxHeight: MonitorPopoverMetrics.rowHeight
+            .buttonStyle(.plain)
+
+            Button(action: onRefresh) {
+                Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+                    .symbolEffect(.rotate, isActive: isRefreshing)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.secondary.opacity(isHovering ? 1 : 0.55))
+            .disabled(!monitor.isEnabled || isRefreshing)
+            .help(L10n.string("popover.refresh_monitor"))
+            .accessibilityLabel(
+                L10n.format("popover.refresh_named_monitor", monitor.name)
             )
-            .contentShape(Rectangle())
-            .background(isHovering ? Color.primary.opacity(0.045) : Color.clear)
+            .padding(.trailing, 12)
         }
-        .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+        .background(isHovering ? Color.primary.opacity(0.045) : Color.clear)
         .onHover { isHovering = $0 }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint(L10n.string("popover.open_monitor_settings"))
     }
 
     private var statusPrimaryText: String {

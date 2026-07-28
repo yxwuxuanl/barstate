@@ -37,6 +37,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let applicationMenuItem = NSMenuItem()
         let applicationMenu = NSMenu()
+
+        let aboutItem = NSMenuItem(
+            title: L10n.string("menu.about"),
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        applicationMenu.addItem(aboutItem)
+
+        let settingsItem = NSMenuItem(
+            title: L10n.string("menu.settings"),
+            action: #selector(showSettings(_:)),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        applicationMenu.addItem(settingsItem)
+
+        let refreshItem = NSMenuItem(
+            title: L10n.string("menu.refresh_all"),
+            action: #selector(refreshAll(_:)),
+            keyEquivalent: "r"
+        )
+        refreshItem.target = self
+        applicationMenu.addItem(refreshItem)
+        applicationMenu.addItem(.separator())
+
         applicationMenu.addItem(
             withTitle: L10n.string("menu.quit"),
             action: #selector(NSApplication.terminate(_:)),
@@ -110,6 +135,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        appController?.showSettings()
+    }
+
+    @objc private func refreshAll(_ sender: Any?) {
+        appController?.refreshAll()
     }
 
     private func menuItem(

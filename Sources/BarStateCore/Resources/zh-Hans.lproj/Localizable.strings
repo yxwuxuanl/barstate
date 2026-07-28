@@ -5,11 +5,16 @@
 "common.unsaved" = "未保存";
 "common.value" = "值";
 "common.later" = "稍后";
+"common.expanded" = "已展开";
+"common.collapsed" = "已折叠";
 "list.inline_separator" = "；";
 "list.accessibility_separator" = "，";
 "list.detail_separator" = " · ";
 
 "menu.quit" = "退出 BarState";
+"menu.about" = "关于 BarState";
+"menu.settings" = "设置…";
+"menu.refresh_all" = "刷新全部";
 "menu.edit" = "编辑";
 "menu.undo" = "撤销";
 "menu.redo" = "重做";
@@ -33,12 +38,30 @@
 "settings.select_monitor_hint" = "也可以从左侧新建监控项。";
 "settings.launch_at_login" = "登录时启动";
 "settings.language" = "语言";
+"settings.menu_bar_presentation" = "菜单栏";
+"settings.menu_bar_individual" = "每项单独显示";
+"settings.menu_bar_compact" = "单一入口";
+"settings.menu_bar_maximum_characters" = "标题最大长度";
+"settings.menu_bar_characters" = "%lld 个字符";
+"settings.add_http" = "新建 HTTP API 监控";
+"settings.add_prometheus" = "新建 Prometheus 监控";
+"settings.add_template" = "使用 JSON 数值模板";
 "settings.discard_title" = "放弃未保存的修改？";
 "settings.discard" = "放弃修改";
 "settings.discard_message" = "尚未保存的监控项设置会丢失。";
 "settings.delete_title" = "删除监控项？";
 "settings.delete_message" = "“%@”及其历史状态将从本机删除。";
 "settings.sidebar_help" = "%@\n%@";
+
+"onboarding.title" = "把第一个指标放进菜单栏";
+"onboarding.description" = "连接数据源、提取一个数值，再决定它如何显示。认证和请求头等高级选项只在需要时展开。";
+"onboarding.http_title" = "HTTP API";
+"onboarding.http_description" = "从 JSON 或纯文本响应中读取数值。";
+"onboarding.prometheus_title" = "Prometheus";
+"onboarding.prometheus_description" = "执行返回单个数值的 PromQL 即时查询。";
+"onboarding.template_title" = "JSON 数值模板";
+"onboarding.template_description" = "从常用的 $.data.value 提取方式开始。";
+"onboarding.steps" = "连接 → 提取 → 展示";
 
 "language.system" = "跟随系统";
 "language.simplified_chinese" = "简体中文";
@@ -60,6 +83,8 @@
 "popover.refresh_in_progress" = "刷新正在进行";
 "popover.enable_monitor_first" = "请先在设置中启用监控项";
 "popover.refresh_help" = "立即刷新所有已启用的监控项";
+"popover.refresh_monitor" = "立即刷新此监控项";
+"popover.refresh_named_monitor" = "刷新%@";
 "popover.save_warning" = "保存警告：%@";
 "popover.display_value" = "显示值：%@";
 "popover.previous_value" = "上次值";
@@ -81,6 +106,17 @@
 "editor.section.request" = "请求设置";
 "editor.section.query" = "查询设置";
 "editor.section.parser" = "解析设置";
+"editor.stage_connect" = "连接";
+"editor.stage_extract" = "提取";
+"editor.stage_display" = "展示";
+"editor.stage_query" = "查询";
+"editor.stage_completed" = "已完成";
+"editor.stage_current" = "当前步骤";
+"editor.stage_upcoming" = "后续步骤";
+"editor.advanced_request" = "认证、请求头与超时";
+"editor.advanced_request_help" = "仅受保护接口或自定义请求行为需要";
+"editor.menu_bar_preview" = "菜单栏预览";
+"editor.waiting_for_response" = "测试连接后即可配置数值提取。";
 "editor.data_source" = "数据源";
 "editor.prometheus_address" = "Prometheus 地址";
 "editor.prometheus_endpoint_help" = "自动调用 /api/v1/query；本机地址可使用 HTTP";
@@ -211,6 +247,9 @@
 
 "statusbar.open_monitor_list" = "打开监控列表";
 "statusbar.open_barstate" = "打开 BarState";
+"statusbar.monitor_accessibility" = "%@：%@";
+"statusbar.compact_tooltip" = "%lld 个菜单栏监控，%lld 个存在失败";
+"statusbar.compact_accessibility" = "BarState，%lld 个菜单栏监控，%lld 个存在失败";
 
 "login.approval_required" = "需要在“系统设置 → 通用 → 登录项”中允许 BarState";
 "login.registration_unavailable" = "当前构建无法注册为登录项";
@@ -227,8 +266,23 @@
 "persistence.unreadable" = "配置文件和备份均无法读取。原文件仍保留在本机，尚未覆盖。";
 "persistence.unsupported_version" = "不支持的配置版本：%lld";
 "persistence.save_failed" = "保存失败：%@";
+"persistence.recovery_required" = "请先完成配置恢复，再进行修改";
+"persistence.recovery_complete" = "配置恢复完成";
+"persistence.recovery_failed" = "恢复失败：%@";
+"recovery.backup_title" = "已从备份载入配置";
+"recovery.backup_message" = "恢复前 BarState 会保持只读；写入前会保留现有文件，避免覆盖恢复线索。";
+"recovery.unreadable_title" = "配置文件需要处理";
+"recovery.unreadable_message" = "BarState 已阻止所有写入，避免覆盖无法读取的文件。你可以先查看文件手动恢复，或归档旧文件并重新开始。";
+"recovery.restore" = "恢复此配置";
+"recovery.export" = "导出副本…";
+"recovery.show_files" = "显示文件";
+"recovery.start_fresh" = "归档并重新开始";
+"recovery.start_fresh_title" = "归档无法读取的文件并重新开始？";
+"recovery.start_fresh_message" = "旧文件会重命名并保留在 BarState 文件夹中，随后创建一份新的空配置。";
+"recovery.export_title" = "导出已恢复的 BarState 配置";
 
 "monitor.default_name" = "新监控项";
+"monitor.json_template_name" = "JSON 数值";
 "monitor.interval.seconds" = "秒";
 "monitor.interval.minutes" = "分";
 "monitor.interval.hours" = "时";

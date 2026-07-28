@@ -114,6 +114,26 @@ struct PollingEngineTests {
         #expect(receivedBothResults)
         await engine.stop()
     }
+
+    @Test func refreshesOnlyTheRequestedMonitor() async {
+        let fetcher = TestValueFetcher(defaultDelay: .milliseconds(20))
+        let results = ResultRecorder()
+        let first = Monitor(name: "first", urlString: "https://example.com/first")
+        let second = Monitor(name: "second", urlString: "https://example.com/second", order: 1)
+        let engine = PollingEngine(
+            valueFetcher: fetcher,
+            resultHandler: { id, outcome, _ in
+                await results.append(id: id, outcome: outcome)
+            }
+        )
+
+        await engine.update(monitors: [first, second], refreshChanged: false)
+        await engine.refresh(id: second.id)
+
+        let received = await waitUntil { await results.ids == [second.id] }
+        #expect(received)
+        await engine.stop()
+    }
 }
 
 private actor TestValueFetcher: MonitorValueFetching {
@@ -151,8 +171,14 @@ private actor TestValueFetcher: MonitorValueFetching {
 
 private actor ResultRecorder {
     private var outcomes: [FetchOutcome] = []
+    private var monitorIDs: [UUID] = []
 
     func append(_ outcome: FetchOutcome) {
+        outcomes.append(outcome)
+    }
+
+    func append(id: UUID, outcome: FetchOutcome) {
+        monitorIDs.append(id)
         outcomes.append(outcome)
     }
 
@@ -161,6 +187,8 @@ private actor ResultRecorder {
     var values: [Double] {
         outcomes.compactMap { try? $0.result.get() }
     }
+
+    var ids: [UUID] { monitorIDs }
 }
 
 private func waitUntil(
