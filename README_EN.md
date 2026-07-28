@@ -196,13 +196,14 @@ Temperature ${value}°C
 
 The refresh interval can use seconds, minutes, or hours and must be between 30 seconds and 365 days.
 
-Click any BarState menu bar item to view all monitors, their current status, and their latest update time. You can also manually refresh all enabled monitors. Hold Command while dragging a menu bar item to change its position.
+Click any BarState menu bar item to view all monitors, their current status, and their latest update time. You can refresh one monitor or all enabled monitors. The menu bar can show separate monitor items or one consolidated BarState item; separate items support a maximum title length. Hold Command while dragging a menu bar item to change its position.
 
 ## Other Settings
 
 - Launch at Login: opens BarState automatically when you sign in to macOS.
 - Language: choose Follow System, 简体中文, or English. Restart BarState to apply the change.
-- Use the sidebar to reorder monitors or delete monitors you no longer need.
+- Menu Bar: choose separate items or a single consolidated entry.
+- The sidebar supports drag reordering and context-menu clone, move, and delete actions.
 
 ## Local Data and Uninstalling
 
@@ -213,6 +214,8 @@ BarState stores monitor settings in:
 ```
 
 Basic Authentication credentials, request header contents, and the most recent complete response are stored locally. Avoid long-lived or highly privileged credentials, and prefer dedicated credentials that can be revoked.
+
+If configuration files cannot be read, BarState enters a read-only recovery mode so later edits cannot overwrite them. Starting fresh archives the old files with `.corrupt-timestamp.json` names first.
 
 To uninstall BarState:
 

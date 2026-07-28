@@ -18,6 +18,9 @@ struct BarStateAppSmokeTests {
         try testPrometheusQueryCompatibility()
         try testLocalizationAndErrorPersistence()
         try testPersistenceRecoveryAndPermissions()
+        try await testRecoveryWriteProtection()
+        try testMenuBarPreferencesAndFormatting()
+        testFirstLaunchSettingsPolicy()
         try await testPollingGenerationAndConcurrency()
         testManualRefreshFeedback()
         print("BarState app smoke tests passed")
@@ -244,6 +247,100 @@ struct BarStateAppSmokeTests {
         let recovered = persistence.load()
         precondition(recovered.state.monitors == [expected], "backup recovery failed")
         precondition(recovered.warning != nil, "backup recovery should be visible")
+        precondition(
+            recovered.recoveryMode == .recoveredFromBackup(primaryWasMissing: false),
+            "backup recovery must require an explicit resolution"
+        )
+        let archived = try persistence.resolveRecovery(
+            state: recovered.state,
+            mode: recovered.recoveryMode!
+        )
+        precondition(archived.count == 1, "the corrupt primary file must be archived")
+        precondition(persistence.load().recoveryMode == nil, "recovery must become writable")
+    }
+
+    private static func testMenuBarPreferencesAndFormatting() throws {
+        let preferences = AppPreferences(
+            menuBarPresentation: .compact,
+            menuBarMaximumCharacters: 12
+        )
+        let state = StoredState(monitors: [], preferences: preferences)
+        let decoded = try JSONDecoder().decode(
+            StoredState.self,
+            from: JSONEncoder().encode(state)
+        )
+        precondition(decoded.preferences == preferences, "menu-bar preferences must persist")
+
+        var legacyObject = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(state)
+        ) as! [String: Any]
+        legacyObject.removeValue(forKey: "preferences")
+        let legacyState = try JSONDecoder().decode(
+            StoredState.self,
+            from: JSONSerialization.data(withJSONObject: legacyObject)
+        )
+        precondition(
+            legacyState.preferences == AppPreferences(),
+            "legacy state must receive default menu-bar preferences"
+        )
+
+        let monitor = Monitor(
+            name: "long",
+            displayTemplate: "A very long metric ${value}",
+            runtime: MonitorRuntimeState(lastValue: 42)
+        )
+        let title = StatusBarTitleFormatter.individualTitle(
+            for: monitor,
+            maximumCharacters: 12
+        )
+        precondition(title.count == 12 && title.hasSuffix("…"), "title budget failed")
+    }
+
+    @MainActor
+    private static func testRecoveryWriteProtection() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BarStateRecoverySmoke-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let persistence = PersistenceController(directoryURL: directory)
+        try Data("broken-primary".utf8).write(to: persistence.fileURL)
+        try Data("broken-backup".utf8).write(to: persistence.backupFileURL)
+
+        let store = MonitorStore(persistence: persistence)
+        precondition(store.isPersistenceWriteProtected, "unreadable files must block writes")
+        store.add(Monitor(name: "must-not-save"))
+        precondition(store.monitors.isEmpty, "writes must remain blocked during recovery")
+        let primaryContents = String(
+            decoding: try Data(contentsOf: persistence.fileURL),
+            as: UTF8.self
+        )
+        precondition(
+            primaryContents == "broken-primary",
+            "the primary file was overwritten before recovery"
+        )
+
+        await store.startFreshAfterRecovery()
+        precondition(!store.isPersistenceWriteProtected, "starting fresh must resolve recovery")
+        let archives = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.contains(".corrupt-") }
+        precondition(archives.count == 2, "both unreadable files must be archived")
+    }
+
+    private static func testFirstLaunchSettingsPolicy() {
+        let suiteName = "BarStateFirstLaunchSmokeTests-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            preconditionFailure("could not create isolated first-launch defaults")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let policy = FirstLaunchSettingsPolicy(defaults: defaults)
+
+        precondition(policy.consumeShouldShowSettings(), "first launch must show settings")
+        precondition(
+            !policy.consumeShouldShowSettings(),
+            "later launches must not show settings again"
+        )
     }
 
     private static func testPollingGenerationAndConcurrency() async throws {

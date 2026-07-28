@@ -1,6 +1,7 @@
 import AppKit
 import BarStateCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var store: MonitorStore
@@ -13,25 +14,46 @@ struct SettingsView: View {
     @State private var showsDiscardAlert = false
     @State private var selectedLanguage = AppLanguage.storedPreference
     @State private var showsLanguageRestartAlert = false
+    @State private var showsStartFreshAlert = false
+    @State private var isResolvingRecovery = false
 
     private enum PendingNavigation {
         case select(UUID?)
-        case create
+        case create(MonitorCreationKind)
         case clone(UUID)
     }
 
+    private enum MonitorCreationKind {
+        case httpAPI
+        case prometheus
+        case jsonTemplate
+    }
+
     var body: some View {
-        HSplitView {
-            sidebar
-                .frame(minWidth: 210, idealWidth: 230, maxWidth: 270)
-            detail
-                .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            if let recoveryMode = store.recoveryMode {
+                PersistenceRecoveryBanner(
+                    mode: recoveryMode,
+                    isWorking: isResolvingRecovery,
+                    onRestore: restoreRecoveredConfiguration,
+                    onExport: exportRecoveredConfiguration,
+                    onShowFiles: showConfigurationFiles,
+                    onStartFresh: { showsStartFreshAlert = true }
+                )
+            }
+
+            HSplitView {
+                sidebar
+                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                detail
+                    .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .frame(minWidth: 860, minHeight: 620)
         .onAppear {
             loginItemManager.refreshStatus()
             if ProcessInfo.processInfo.arguments.contains("--preview-new-monitor") {
-                applyNavigation(.create)
+                applyNavigation(.create(.httpAPI))
                 return
             }
             if let requestedMonitorID = session.requestedMonitorID,
@@ -95,6 +117,17 @@ struct SettingsView: View {
         } message: {
             Text(L10n.string("language.restart_message"))
         }
+        .alert(
+            L10n.string("recovery.start_fresh_title"),
+            isPresented: $showsStartFreshAlert
+        ) {
+            Button(L10n.string("recovery.start_fresh"), role: .destructive) {
+                startFreshAfterRecovery()
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("recovery.start_fresh_message"))
+        }
     }
 
     private var sidebar: some View {
@@ -107,12 +140,23 @@ struct SettingsView: View {
                     guard let selectedID else { return }
                     requestNavigation(.clone(selectedID))
                 }
-                .disabled(!canCloneSelected)
+                .disabled(!canCloneSelected || store.isPersistenceWriteProtected)
                 .help(L10n.string("settings.clone_help"))
 
-                Button(L10n.string("settings.add")) {
-                    requestNavigation(.create)
+                Menu(L10n.string("settings.add")) {
+                    Button(L10n.string("settings.add_http")) {
+                        requestNavigation(.create(.httpAPI))
+                    }
+                    Button(L10n.string("settings.add_prometheus")) {
+                        requestNavigation(.create(.prometheus))
+                    }
+                    Divider()
+                    Button(L10n.string("settings.add_template")) {
+                        requestNavigation(.create(.jsonTemplate))
+                    }
                 }
+                .disabled(store.isPersistenceWriteProtected)
+                .keyboardShortcut("n", modifiers: .command)
             }
             .padding(14)
 
@@ -146,12 +190,40 @@ struct SettingsView: View {
                     .padding(.vertical, 3)
                     .tag(monitor.id)
                     .help("\(monitor.name)\n\(sidebarSubtitle(for: monitor))")
+                    .contextMenu {
+                        Button(L10n.string("settings.clone")) {
+                            requestNavigation(.clone(monitor.id))
+                        }
+                        .disabled(store.isPersistenceWriteProtected)
+                        Button(L10n.string("settings.move_up")) {
+                            store.move(id: monitor.id, offset: -1)
+                        }
+                        .disabled(
+                            store.isPersistenceWriteProtected || !canMove(monitor.id, by: -1)
+                        )
+                        Button(L10n.string("settings.move_down")) {
+                            store.move(id: monitor.id, offset: 1)
+                        }
+                        .disabled(
+                            store.isPersistenceWriteProtected || !canMove(monitor.id, by: 1)
+                        )
+                        Divider()
+                        Button(L10n.string("common.delete"), role: .destructive) {
+                            pendingDeletion = monitor
+                        }
+                        .disabled(store.isPersistenceWriteProtected)
+                    }
                 }
+                .onMove(perform: store.move)
             }
             .listStyle(.sidebar)
+            .frame(minHeight: 120)
+            .layoutPriority(0)
 
             Divider()
             sidebarGeneralSettings
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(2)
             Divider()
 
             HStack(spacing: 14) {
@@ -165,7 +237,7 @@ struct SettingsView: View {
                     guard let selectedID, let monitor = store.monitor(id: selectedID) else { return }
                     pendingDeletion = monitor
                 }
-                .disabled(selectedID == nil)
+                .disabled(selectedID == nil || store.isPersistenceWriteProtected)
 
                 Spacer()
 
@@ -173,15 +245,17 @@ struct SettingsView: View {
                     guard let selectedID else { return }
                     store.move(id: selectedID, offset: -1)
                 }
-                .disabled(!canMoveSelected(by: -1))
+                .disabled(!canMoveSelected(by: -1) || store.isPersistenceWriteProtected)
 
                 Button(L10n.string("settings.move_down")) {
                     guard let selectedID else { return }
                     store.move(id: selectedID, offset: 1)
                 }
-                .disabled(!canMoveSelected(by: 1))
+                .disabled(!canMoveSelected(by: 1) || store.isPersistenceWriteProtected)
             }
             .padding(14)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(2)
         }
     }
 
@@ -209,7 +283,22 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let pendingDraft, selectedID == pendingDraft.id {
+        if store.recoveryMode == .unreadableFiles {
+            VStack(spacing: 10) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundStyle(.red)
+                    .accessibilityHidden(true)
+                Text(L10n.string("recovery.unreadable_title"))
+                    .font(.title2.weight(.semibold))
+                Text(L10n.string("recovery.unreadable_message"))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 520)
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let pendingDraft, selectedID == pendingDraft.id {
             MonitorEditorViewV2(
                 monitor: pendingDraft,
                 requiresInitialSuccessfulTest: true,
@@ -224,6 +313,7 @@ struct SettingsView: View {
                 selectedID = saved.id
             }
             .id("\(pendingDraft.id)-\(session.discardGeneration)")
+            .disabled(store.isPersistenceWriteProtected)
         } else if let selectedID, let monitor = store.monitor(id: selectedID) {
             MonitorEditorViewV2(
                 monitor: monitor,
@@ -248,6 +338,13 @@ struct SettingsView: View {
                 }
             )
             .id("\(selectedID)-\(session.discardGeneration)")
+            .disabled(store.isPersistenceWriteProtected)
+        } else if store.orderedMonitors.isEmpty {
+            FirstMonitorWelcomeView(
+                onCreateHTTP: { requestNavigation(.create(.httpAPI)) },
+                onCreatePrometheus: { requestNavigation(.create(.prometheus)) },
+                onUseJSONTemplate: { requestNavigation(.create(.jsonTemplate)) }
+            )
         } else {
             VStack(spacing: 8) {
                 Text(L10n.string("settings.select_monitor"))
@@ -272,6 +369,29 @@ struct SettingsView: View {
             .pickerStyle(.menu)
             .help(L10n.string("language.help"))
 
+            Picker(
+                L10n.string("settings.menu_bar_presentation"),
+                selection: menuBarPresentationBinding
+            ) {
+                ForEach(MenuBarPresentation.allCases) { presentation in
+                    Text(presentation.displayName).tag(presentation)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if store.preferences.menuBarPresentation == .individual {
+                Stepper(
+                    L10n.format(
+                        "settings.menu_bar_characters",
+                        Int64(store.preferences.menuBarMaximumCharacters)
+                    ),
+                    value: menuBarMaximumCharactersBinding,
+                    in: AppPreferences.minimumMenuBarCharacters...AppPreferences.maximumMenuBarCharacters,
+                    step: 2
+                )
+                .font(.caption)
+            }
+
             Toggle(
                 L10n.string("settings.launch_at_login"),
                 isOn: Binding(
@@ -280,6 +400,12 @@ struct SettingsView: View {
                 )
             )
             .toggleStyle(.switch)
+
+            if store.isPersistenceWriteProtected {
+                Text(L10n.string("persistence.recovery_required"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let errorMessage = loginItemManager.errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.circle.fill")
@@ -322,9 +448,35 @@ struct SettingsView: View {
         )
     }
 
+    private var menuBarPresentationBinding: Binding<MenuBarPresentation> {
+        Binding(
+            get: { store.preferences.menuBarPresentation },
+            set: { presentation in
+                var preferences = store.preferences
+                preferences.menuBarPresentation = presentation
+                store.updatePreferences(preferences)
+            }
+        )
+    }
+
+    private var menuBarMaximumCharactersBinding: Binding<Int> {
+        Binding(
+            get: { store.preferences.menuBarMaximumCharacters },
+            set: { maximumCharacters in
+                var preferences = store.preferences
+                preferences.menuBarMaximumCharacters = maximumCharacters
+                store.updatePreferences(preferences)
+            }
+        )
+    }
+
     private func canMoveSelected(by offset: Int) -> Bool {
-        guard let selectedID,
-              let index = store.orderedMonitors.firstIndex(where: { $0.id == selectedID })
+        guard let selectedID else { return false }
+        return canMove(selectedID, by: offset)
+    }
+
+    private func canMove(_ monitorID: UUID, by offset: Int) -> Bool {
+        guard let index = store.orderedMonitors.firstIndex(where: { $0.id == monitorID })
         else { return false }
         return store.orderedMonitors.indices.contains(index + offset)
     }
@@ -399,8 +551,8 @@ struct SettingsView: View {
         switch navigation {
         case let .select(id):
             selectedID = id
-        case .create:
-            let draft = Monitor.draft(order: store.monitors.count)
+        case let .create(kind):
+            let draft = makeDraft(kind: kind)
             pendingDraft = draft
             selectedID = draft.id
             session.setDirty(true)
@@ -417,6 +569,61 @@ struct SettingsView: View {
             pendingDraft = draft
             selectedID = draft.id
             session.setDirty(true)
+        }
+    }
+
+    private func makeDraft(kind: MonitorCreationKind) -> Monitor {
+        var draft = Monitor.draft(order: store.monitors.count)
+        switch kind {
+        case .httpAPI:
+            draft.sourceKind = .httpAPI
+        case .prometheus:
+            draft.sourceKind = .prometheus
+            draft.urlString = "https://"
+        case .jsonTemplate:
+            draft.sourceKind = .httpAPI
+            draft.name = L10n.string("monitor.json_template_name")
+            draft.urlString = "https://api.example.com/value"
+            draft.parser = ParserConfiguration(jsonPath: "$.data.value")
+            draft.displayTemplate = Monitor.valuePlaceholder
+        }
+        return draft
+    }
+
+    private func restoreRecoveredConfiguration() {
+        isResolvingRecovery = true
+        Task { @MainActor in
+            await store.restoreRecoveredConfiguration()
+            isResolvingRecovery = false
+        }
+    }
+
+    private func startFreshAfterRecovery() {
+        isResolvingRecovery = true
+        Task { @MainActor in
+            await store.startFreshAfterRecovery()
+            selectedID = nil
+            pendingDraft = nil
+            session.setDirty(false)
+            isResolvingRecovery = false
+        }
+    }
+
+    private func showConfigurationFiles() {
+        NSWorkspace.shared.open(store.configurationDirectoryURL)
+    }
+
+    private func exportRecoveredConfiguration() {
+        let panel = NSSavePanel()
+        panel.title = L10n.string("recovery.export_title")
+        panel.nameFieldStringValue = "BarState-recovered.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+        do {
+            try store.exportConfiguration(to: destinationURL)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
         }
     }
 }

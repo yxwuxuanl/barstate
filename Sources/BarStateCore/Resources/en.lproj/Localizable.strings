@@ -5,11 +5,16 @@
 "common.unsaved" = "Unsaved";
 "common.value" = "Value";
 "common.later" = "Later";
+"common.expanded" = "Expanded";
+"common.collapsed" = "Collapsed";
 "list.inline_separator" = "; ";
 "list.accessibility_separator" = ", ";
 "list.detail_separator" = " · ";
 
 "menu.quit" = "Quit BarState";
+"menu.about" = "About BarState";
+"menu.settings" = "Settings…";
+"menu.refresh_all" = "Refresh All";
 "menu.edit" = "Edit";
 "menu.undo" = "Undo";
 "menu.redo" = "Redo";
@@ -33,12 +38,30 @@
 "settings.select_monitor_hint" = "Or create a monitor from the sidebar.";
 "settings.launch_at_login" = "Launch at Login";
 "settings.language" = "Language";
+"settings.menu_bar_presentation" = "Menu Bar";
+"settings.menu_bar_individual" = "Separate Items";
+"settings.menu_bar_compact" = "Single Item";
+"settings.menu_bar_maximum_characters" = "Maximum Title Length";
+"settings.menu_bar_characters" = "%lld characters";
+"settings.add_http" = "New HTTP API Monitor";
+"settings.add_prometheus" = "New Prometheus Monitor";
+"settings.add_template" = "Use JSON Value Template";
 "settings.discard_title" = "Discard unsaved changes?";
 "settings.discard" = "Discard Changes";
 "settings.discard_message" = "Your unsaved monitor settings will be lost.";
 "settings.delete_title" = "Delete monitor?";
 "settings.delete_message" = "“%@” and its status history will be removed from this Mac.";
 "settings.sidebar_help" = "%@\n%@";
+
+"onboarding.title" = "Put your first metric in the menu bar";
+"onboarding.description" = "Connect a data source, extract one number, and decide how it should appear. Advanced request options stay out of the way until you need them.";
+"onboarding.http_title" = "HTTP API";
+"onboarding.http_description" = "Read a number from JSON or plain text.";
+"onboarding.prometheus_title" = "Prometheus";
+"onboarding.prometheus_description" = "Run an instant PromQL query that returns one value.";
+"onboarding.template_title" = "JSON Value Template";
+"onboarding.template_description" = "Start with a common $.data.value extraction pattern.";
+"onboarding.steps" = "Connect → Extract → Display";
 
 "language.system" = "Follow System";
 "language.simplified_chinese" = "简体中文";
@@ -60,6 +83,8 @@
 "popover.refresh_in_progress" = "A refresh is already in progress";
 "popover.enable_monitor_first" = "Enable a monitor in Settings first";
 "popover.refresh_help" = "Refresh all enabled monitors now";
+"popover.refresh_monitor" = "Refresh this monitor now";
+"popover.refresh_named_monitor" = "Refresh %@";
 "popover.save_warning" = "Save warning: %@";
 "popover.display_value" = "Displayed value: %@";
 "popover.previous_value" = "Previous Value";
@@ -81,6 +106,17 @@
 "editor.section.request" = "Request Settings";
 "editor.section.query" = "Query Settings";
 "editor.section.parser" = "Parser Settings";
+"editor.stage_connect" = "Connect";
+"editor.stage_extract" = "Extract";
+"editor.stage_display" = "Display";
+"editor.stage_query" = "Query";
+"editor.stage_completed" = "Completed";
+"editor.stage_current" = "Current step";
+"editor.stage_upcoming" = "Upcoming step";
+"editor.advanced_request" = "Authentication, Headers & Timeout";
+"editor.advanced_request_help" = "Only needed for protected endpoints or custom request behavior";
+"editor.menu_bar_preview" = "Menu Bar Preview";
+"editor.waiting_for_response" = "Test the connection to unlock value extraction.";
 "editor.data_source" = "Data Source";
 "editor.prometheus_address" = "Prometheus Address";
 "editor.prometheus_endpoint_help" = "Calls /api/v1/query automatically; local endpoints may use HTTP";
@@ -211,6 +247,9 @@
 
 "statusbar.open_monitor_list" = "Open monitor list";
 "statusbar.open_barstate" = "Open BarState";
+"statusbar.monitor_accessibility" = "%@: %@";
+"statusbar.compact_tooltip" = "%lld visible monitors, %lld with failures";
+"statusbar.compact_accessibility" = "BarState, %lld visible monitors, %lld with failures";
 
 "login.approval_required" = "Allow BarState in System Settings → General → Login Items";
 "login.registration_unavailable" = "This build cannot register as a login item";
@@ -227,8 +266,23 @@
 "persistence.unreadable" = "Neither the configuration file nor its backup could be read. The original files remain on this Mac and have not been overwritten.";
 "persistence.unsupported_version" = "Unsupported configuration version: %lld";
 "persistence.save_failed" = "Save failed: %@";
+"persistence.recovery_required" = "Resolve configuration recovery before making changes";
+"persistence.recovery_complete" = "Configuration recovery completed";
+"persistence.recovery_failed" = "Recovery failed: %@";
+"recovery.backup_title" = "Configuration loaded from backup";
+"recovery.backup_message" = "BarState is read-only until you restore this recovered copy. Existing files are preserved before anything is written.";
+"recovery.unreadable_title" = "Configuration files need attention";
+"recovery.unreadable_message" = "BarState has blocked all writes so the unreadable files cannot be overwritten. Reveal the files for manual recovery, or archive them and start fresh.";
+"recovery.restore" = "Restore Recovered Copy";
+"recovery.export" = "Export Copy…";
+"recovery.show_files" = "Show Files";
+"recovery.start_fresh" = "Archive and Start Fresh";
+"recovery.start_fresh_title" = "Archive unreadable files and start fresh?";
+"recovery.start_fresh_message" = "The unreadable files will be renamed and kept in the BarState folder. A new empty configuration will then be created.";
+"recovery.export_title" = "Export Recovered BarState Configuration";
 
 "monitor.default_name" = "New Monitor";
+"monitor.json_template_name" = "JSON Value";
 "monitor.interval.seconds" = "sec";
 "monitor.interval.minutes" = "min";
 "monitor.interval.hours" = "hr";

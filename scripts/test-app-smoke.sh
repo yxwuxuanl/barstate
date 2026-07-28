@@ -25,6 +25,8 @@ CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
     -I "$DIRECT_BUILD_DIR" \
     -L "$DIRECT_BUILD_DIR" \
     -lBarStateCore \
+    "$PROJECT_DIR/Sources/BarState/App/FirstLaunchSettingsPolicy.swift" \
+    "$PROJECT_DIR/Sources/BarState/App/StatusBarTitleFormatter.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/PollingEngine.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/APIClient.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/ScriptServiceClient.swift" \

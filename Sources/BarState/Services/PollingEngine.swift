@@ -91,6 +91,13 @@ actor PollingEngine {
         launchDueRequests(at: now)
     }
 
+    func refresh(id: UUID) {
+        guard monitors[id] != nil else { return }
+        let now = Date()
+        nextDue[id] = now
+        launchDueRequests(at: now)
+    }
+
     func refreshOverdue() {
         launchDueRequests(at: Date())
     }

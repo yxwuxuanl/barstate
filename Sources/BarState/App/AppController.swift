@@ -14,13 +14,15 @@ final class AppController {
     private let isPreviewMode: Bool
     private let previewsSettings: Bool
     private let settingsCapturePath: String?
+    private let firstLaunchSettingsPolicy: FirstLaunchSettingsPolicy
 
-    init() {
+    init(userDefaults: UserDefaults = .standard) {
         let arguments = ProcessInfo.processInfo.arguments
         let previewsSettings = arguments.contains("--preview-settings")
         let isPreviewMode = arguments.contains("--preview") || previewsSettings
         self.isPreviewMode = isPreviewMode
         self.previewsSettings = previewsSettings
+        self.firstLaunchSettingsPolicy = FirstLaunchSettingsPolicy(defaults: userDefaults)
         if let captureArgument = arguments.first(where: { $0.hasPrefix("--capture-settings=") }) {
             let requestedPath = captureArgument
                 .dropFirst("--capture-settings=".count)
@@ -33,7 +35,10 @@ final class AppController {
         } else {
             self.settingsCapturePath = nil
         }
-        let store = MonitorStore(initialMonitors: isPreviewMode ? Self.previewMonitors : nil)
+        let previewMonitors = arguments.contains("--preview-empty")
+            ? []
+            : Self.previewMonitors
+        let store = MonitorStore(initialMonitors: isPreviewMode ? previewMonitors : nil)
         self.store = store
         self.loginItemManager = LoginItemManager()
 
@@ -59,6 +64,9 @@ final class AppController {
         self.statusBarController = StatusBarController(
             store: store,
             onRefreshAll: { [weak self] in self?.refreshAll() },
+            onRefreshMonitor: { [weak self] monitorID in
+                self?.refresh(monitorID: monitorID)
+            },
             onOpenSettings: { [weak self] monitorID in
                 self?.showSettings(monitorID: monitorID)
             }
@@ -119,15 +127,32 @@ final class AppController {
             return
         }
         Task {
-            await pollingEngine.update(monitors: store.orderedMonitors)
+            await pollingEngine.update(
+                monitors: store.isPersistenceWriteProtected ? [] : store.orderedMonitors
+            )
         }
         networkStatusMonitor?.start()
+
+        if firstLaunchSettingsPolicy.consumeShouldShowSettings() {
+            DispatchQueue.main.async { [weak self] in
+                self?.showSettings()
+            }
+        }
     }
 
     func refreshAll() {
         guard store.beginManualRefresh() else { return }
         Task {
             await pollingEngine.refreshAll()
+        }
+    }
+
+    func refresh(monitorID: UUID) {
+        guard !store.isPersistenceWriteProtected,
+              store.monitor(id: monitorID)?.isEnabled == true
+        else { return }
+        Task {
+            await pollingEngine.refresh(id: monitorID)
         }
     }
 

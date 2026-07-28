@@ -105,6 +105,68 @@ public enum RefreshIntervalUnit: String, Codable, CaseIterable, Identifiable, Se
     }
 }
 
+public enum MenuBarPresentation: String, Codable, CaseIterable, Identifiable, Sendable {
+    case individual
+    case compact
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .individual: L10n.string("settings.menu_bar_individual")
+        case .compact: L10n.string("settings.menu_bar_compact")
+        }
+    }
+}
+
+public struct AppPreferences: Codable, Equatable, Sendable {
+    public static let minimumMenuBarCharacters = 8
+    public static let defaultMenuBarCharacters = 24
+    public static let maximumMenuBarCharacters = 48
+
+    public var menuBarPresentation: MenuBarPresentation
+    public var menuBarMaximumCharacters: Int
+
+    public init(
+        menuBarPresentation: MenuBarPresentation = .individual,
+        menuBarMaximumCharacters: Int = AppPreferences.defaultMenuBarCharacters
+    ) {
+        self.menuBarPresentation = menuBarPresentation
+        self.menuBarMaximumCharacters = Self.normalizedMenuBarCharacters(
+            menuBarMaximumCharacters
+        )
+    }
+
+    public static func normalizedMenuBarCharacters(_ value: Int) -> Int {
+        min(max(value, minimumMenuBarCharacters), maximumMenuBarCharacters)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case menuBarPresentation
+        case menuBarMaximumCharacters
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            menuBarPresentation: try container.decodeIfPresent(
+                MenuBarPresentation.self,
+                forKey: .menuBarPresentation
+            ) ?? .individual,
+            menuBarMaximumCharacters: try container.decodeIfPresent(
+                Int.self,
+                forKey: .menuBarMaximumCharacters
+            ) ?? Self.defaultMenuBarCharacters
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(menuBarPresentation, forKey: .menuBarPresentation)
+        try container.encode(menuBarMaximumCharacters, forKey: .menuBarMaximumCharacters)
+    }
+}
+
 public struct RequestHeader: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
@@ -519,9 +581,38 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
 public struct StoredState: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var monitors: [Monitor]
+    public var preferences: AppPreferences
 
-    public init(schemaVersion: Int = 1, monitors: [Monitor]) {
+    public init(
+        schemaVersion: Int = 1,
+        monitors: [Monitor],
+        preferences: AppPreferences = .init()
+    ) {
         self.schemaVersion = schemaVersion
         self.monitors = monitors
+        self.preferences = preferences
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case monitors
+        case preferences
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        monitors = try container.decode([Monitor].self, forKey: .monitors)
+        preferences = try container.decodeIfPresent(
+            AppPreferences.self,
+            forKey: .preferences
+        ) ?? .init()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(monitors, forKey: .monitors)
+        try container.encode(preferences, forKey: .preferences)
     }
 }

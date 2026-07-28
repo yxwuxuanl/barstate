@@ -14,6 +14,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private let store: MonitorStore
     private let popover = NSPopover()
     private let onRefreshAll: () -> Void
+    private let onRefreshMonitor: (UUID) -> Void
     private let onOpenSettings: (UUID?) -> Void
     private var entries: [UUID: Entry] = [:]
     private var fallbackEntry: Entry?
@@ -26,10 +27,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     init(
         store: MonitorStore,
         onRefreshAll: @escaping () -> Void,
+        onRefreshMonitor: @escaping (UUID) -> Void,
         onOpenSettings: @escaping (UUID?) -> Void
     ) {
         self.store = store
         self.onRefreshAll = onRefreshAll
+        self.onRefreshMonitor = onRefreshMonitor
         self.onOpenSettings = onOpenSettings
         super.init()
 
@@ -44,6 +47,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             rootView: MonitorPopoverView(
                 store: store,
                 onRefreshAll: onRefreshAll,
+                onRefreshMonitor: onRefreshMonitor,
                 onOpenSettings: { [weak self] monitorID in
                     guard let self else { return }
                     self.closePopover()
@@ -52,13 +56,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             )
         )
 
-        monitorsCancellable = Publishers.CombineLatest(
+        monitorsCancellable = Publishers.CombineLatest3(
             store.$monitors,
+            store.$preferences,
             store.$persistenceMessage
-        ).sink { [weak self] monitors, persistenceMessage in
+        ).sink { [weak self] monitors, preferences, persistenceMessage in
             Task { @MainActor in
                 self?.synchronize(
                     with: monitors,
+                    preferences: preferences,
                     persistenceMessage: persistenceMessage
                 )
             }
@@ -77,7 +83,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         togglePopover(relativeTo: button)
     }
 
-    private func synchronize(with monitors: [Monitor], persistenceMessage: String?) {
+    private func synchronize(
+        with monitors: [Monitor],
+        preferences: AppPreferences,
+        persistenceMessage: String?
+    ) {
         let listHeight = MonitorPopoverMetrics.listHeight(for: monitors.count)
         let messageHeight = Self.persistenceMessageHeight(for: persistenceMessage)
         popover.contentSize = NSSize(
@@ -88,6 +98,20 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         let visibleMonitors = monitors
             .filter { $0.isEnabled && $0.showsInMenuBar }
             .sorted { $0.order < $1.order }
+
+        if preferences.menuBarPresentation == .compact {
+            removeIndividualEntries()
+            let summaryEntry = fallbackEntry ?? makeFallbackEntry()
+            fallbackEntry = summaryEntry
+            let title = StatusBarTitleFormatter.compactTitle(for: visibleMonitors)
+            summaryEntry.item.button?.title = title
+            summaryEntry.item.button?.toolTip = compactTooltip(for: visibleMonitors)
+            summaryEntry.item.button?.setAccessibilityLabel(compactAccessibilityLabel(
+                for: visibleMonitors
+            ))
+            return
+        }
+
         let visibleIDs = Set(visibleMonitors.map(\.id))
 
         let staleIDs = entries.keys.filter { !visibleIDs.contains($0) }
@@ -97,14 +121,18 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         for monitor in visibleMonitors {
+            let title = StatusBarTitleFormatter.individualTitle(
+                for: monitor,
+                maximumCharacters: preferences.menuBarMaximumCharacters
+            )
             if let entry = entries[monitor.id] {
-                entry.item.button?.title = monitor.menuBarTitle
+                entry.item.button?.title = title
                 entry.item.button?.toolTip = monitor.name
                 entry.item.button?.setAccessibilityLabel(
-                    "\(monitor.name)：\(monitor.menuBarTitle)"
+                    L10n.format("statusbar.monitor_accessibility", monitor.name, monitor.menuBarTitle)
                 )
             } else {
-                entries[monitor.id] = makeEntry(for: monitor)
+                entries[monitor.id] = makeEntry(for: monitor, title: title)
             }
         }
 
@@ -118,13 +146,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
     }
 
-    private func makeEntry(for monitor: Monitor) -> Entry {
+    private func makeEntry(for monitor: Monitor, title: String) -> Entry {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.autosaveName = "BarState.monitor.\(monitor.id.uuidString)"
         item.behavior = [.removalAllowed]
-        item.button?.title = monitor.menuBarTitle
+        item.button?.title = title
         item.button?.toolTip = monitor.name
-        item.button?.setAccessibilityLabel("\(monitor.name)：\(monitor.menuBarTitle)")
+        item.button?.setAccessibilityLabel(
+            L10n.format("statusbar.monitor_accessibility", monitor.name, monitor.menuBarTitle)
+        )
         item.button?.setAccessibilityHelp(L10n.string("statusbar.open_monitor_list"))
 
         let target = StatusItemTarget { [weak self] button in
@@ -160,6 +190,33 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         item.button?.action = #selector(StatusItemTarget.performAction(_:))
         item.isVisible = true
         return Entry(item: item, target: target, visibilityObservation: nil)
+    }
+
+    private func removeIndividualEntries() {
+        for entry in entries.values {
+            NSStatusBar.system.removeStatusItem(entry.item)
+        }
+        entries.removeAll()
+    }
+
+    private func compactTooltip(for monitors: [Monitor]) -> String {
+        guard !monitors.isEmpty else { return L10n.string("statusbar.open_barstate") }
+        let failedCount = monitors.filter { $0.runtime.consecutiveFailures > 0 }.count
+        return L10n.format(
+            "statusbar.compact_tooltip",
+            Int64(monitors.count),
+            Int64(failedCount)
+        )
+    }
+
+    private func compactAccessibilityLabel(for monitors: [Monitor]) -> String {
+        guard !monitors.isEmpty else { return "BarState" }
+        let failedCount = monitors.filter { $0.runtime.consecutiveFailures > 0 }.count
+        return L10n.format(
+            "statusbar.compact_accessibility",
+            Int64(monitors.count),
+            Int64(failedCount)
+        )
     }
 
     private static func persistenceMessageHeight(for message: String?) -> CGFloat {
