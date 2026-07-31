@@ -104,7 +104,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             let summaryEntry = fallbackEntry ?? makeFallbackEntry()
             fallbackEntry = summaryEntry
             let title = StatusBarTitleFormatter.compactTitle(for: visibleMonitors)
-            summaryEntry.item.button?.title = title
+            configure(
+                summaryEntry.item.button,
+                title: title,
+                indicatorAppearance: StatusBarTitleFormatter.compactIndicatorAppearance(
+                    for: visibleMonitors
+                )
+            )
             summaryEntry.item.button?.toolTip = compactTooltip(for: visibleMonitors)
             summaryEntry.item.button?.setAccessibilityLabel(compactAccessibilityLabel(
                 for: visibleMonitors
@@ -126,10 +132,14 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 maximumCharacters: preferences.menuBarMaximumCharacters
             )
             if let entry = entries[monitor.id] {
-                entry.item.button?.title = title
+                configure(
+                    entry.item.button,
+                    title: title,
+                    indicatorAppearance: monitor.statusIndicatorAppearance
+                )
                 entry.item.button?.toolTip = monitor.name
                 entry.item.button?.setAccessibilityLabel(
-                    L10n.format("statusbar.monitor_accessibility", monitor.name, monitor.menuBarTitle)
+                    monitorAccessibilityLabel(for: monitor)
                 )
             } else {
                 entries[monitor.id] = makeEntry(for: monitor, title: title)
@@ -139,6 +149,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         if visibleMonitors.isEmpty {
             if fallbackEntry == nil {
                 fallbackEntry = makeFallbackEntry()
+            } else {
+                configure(fallbackEntry?.item.button, title: "BarState", indicatorAppearance: nil)
+                fallbackEntry?.item.button?.toolTip = L10n.string("statusbar.open_barstate")
             }
         } else if let fallbackEntry {
             NSStatusBar.system.removeStatusItem(fallbackEntry.item)
@@ -150,10 +163,14 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.autosaveName = "BarState.monitor.\(monitor.id.uuidString)"
         item.behavior = [.removalAllowed]
-        item.button?.title = title
+        configure(
+            item.button,
+            title: title,
+            indicatorAppearance: monitor.statusIndicatorAppearance
+        )
         item.button?.toolTip = monitor.name
         item.button?.setAccessibilityLabel(
-            L10n.format("statusbar.monitor_accessibility", monitor.name, monitor.menuBarTitle)
+            monitorAccessibilityLabel(for: monitor)
         )
         item.button?.setAccessibilityHelp(L10n.string("statusbar.open_monitor_list"))
 
@@ -212,11 +229,56 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func compactAccessibilityLabel(for monitors: [Monitor]) -> String {
         guard !monitors.isEmpty else { return "BarState" }
         let failedCount = monitors.filter { $0.runtime.consecutiveFailures > 0 }.count
-        return L10n.format(
+        let baseLabel = L10n.format(
             "statusbar.compact_accessibility",
             Int64(monitors.count),
             Int64(failedCount)
         )
+        guard let appearance = StatusBarTitleFormatter.compactIndicatorAppearance(
+            for: monitors
+        ) else {
+            return baseLabel
+        }
+        return [
+            baseLabel,
+            appearance.accessibilityText
+        ].joined(separator: L10n.string("list.accessibility_separator"))
+    }
+
+    private func monitorAccessibilityLabel(for monitor: Monitor) -> String {
+        let baseLabel = L10n.format(
+            "statusbar.monitor_accessibility",
+            monitor.name,
+            monitor.menuBarTitle
+        )
+        guard let appearance = monitor.statusIndicatorAppearance else { return baseLabel }
+        return [
+            baseLabel,
+            appearance.accessibilityText
+        ].joined(separator: L10n.string("list.accessibility_separator"))
+    }
+
+    private func configure(
+        _ button: NSStatusBarButton?,
+        title: String,
+        indicatorAppearance: StatusIndicatorAppearance?
+    ) {
+        guard let button else { return }
+        button.title = title
+        button.imagePosition = .imageLeading
+        button.image = indicatorAppearance.map { indicatorImage(for: $0) }
+    }
+
+    private func indicatorImage(for appearance: StatusIndicatorAppearance) -> NSImage {
+        let size = NSSize(width: 8, height: 8)
+        let image = NSImage(size: size, flipped: false) { rect in
+            appearance.color.nsColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = appearance.accessibilityText
+        return image
     }
 
     private static func persistenceMessageHeight(for message: String?) -> CGFloat {

@@ -37,4 +37,43 @@ struct StatusBarTitleFormatterTests {
             ) == "BarState · 1×"
         )
     }
+
+    @Test func compactIndicatorShowsSharedColorAndMarksMixedColors() {
+        let blue = Monitor(
+            name: "blue",
+            statusIndicator: StatusIndicatorConfiguration(
+                isEnabled: true,
+                rules: [StatusIndicatorRule(value: 1, color: .blue)]
+            ),
+            runtime: MonitorRuntimeState(lastValue: 1)
+        )
+        let anotherBlue = Monitor(
+            name: "another blue",
+            statusIndicator: StatusIndicatorConfiguration(
+                isEnabled: true,
+                rules: [StatusIndicatorRule(value: 2, color: .blue)]
+            ),
+            runtime: MonitorRuntimeState(lastValue: 2)
+        )
+        let red = Monitor(
+            name: "red",
+            statusIndicator: StatusIndicatorConfiguration(
+                isEnabled: true,
+                rules: [StatusIndicatorRule(value: 3, color: .red)]
+            ),
+            runtime: MonitorRuntimeState(lastValue: 3)
+        )
+
+        let shared = StatusBarTitleFormatter.compactIndicatorAppearance(
+            for: [blue, anotherBlue]
+        )
+        #expect(shared?.kind == .matched)
+        #expect(shared?.color == .blue)
+
+        let mixed = StatusBarTitleFormatter.compactIndicatorAppearance(
+            for: [blue, red]
+        )
+        #expect(mixed?.kind == .mixed)
+        #expect(mixed?.color == .gray)
+    }
 }

@@ -8,7 +8,11 @@ BarState 是一款 macOS 菜单栏监控工具，提供两种独立的使用方�
 
 ## 界面预览
 
-![BarState 设置面板、菜单栏状态与监控列表](docs/images/barstate-app-overview-zh.png)
+<p align="center">
+  <img src="docs/images/barstate-menubar-popover.png" alt="BarState 菜单栏与监控弹窗" width="540">
+</p>
+
+![BarState 监控设置界面](docs/images/barstate-settings.png)
 
 ## 系统要求
 

@@ -18,6 +18,17 @@ enum StatusBarTitleFormatter {
         return "BarState"
     }
 
+    static func compactIndicatorAppearance(
+        for monitors: [Monitor]
+    ) -> StatusIndicatorAppearance? {
+        let appearances = monitors.compactMap(\.statusIndicatorAppearance)
+        guard let first = appearances.first else { return nil }
+        guard appearances.dropFirst().allSatisfy({ $0 == first }) else {
+            return StatusIndicatorAppearance(color: .gray, kind: .mixed)
+        }
+        return first
+    }
+
     static func truncated(_ title: String, maximumCharacters: Int) -> String {
         let maximumCharacters = AppPreferences.normalizedMenuBarCharacters(maximumCharacters)
         guard title.count > maximumCharacters else { return title }

@@ -11,6 +11,19 @@
 "list.accessibility_separator" = "，";
 "list.detail_separator" = " · ";
 
+"status_indicator.accessibility_color" = "%@状态指示灯";
+"status_indicator.accessibility_unavailable" = "没有匹配的状态指示灯规则";
+"status_indicator.accessibility_mixed" = "存在多种状态指示灯颜色";
+"status_indicator.color.red" = "红色";
+"status_indicator.color.orange" = "橙色";
+"status_indicator.color.yellow" = "黄色";
+"status_indicator.color.green" = "绿色";
+"status_indicator.color.mint" = "薄荷色";
+"status_indicator.color.blue" = "蓝色";
+"status_indicator.color.purple" = "紫色";
+"status_indicator.color.pink" = "粉色";
+"status_indicator.color.gray" = "灰色";
+
 "menu.quit" = "退出 BarState";
 "menu.about" = "关于 BarState";
 "menu.settings" = "设置…";
@@ -116,6 +129,17 @@
 "editor.advanced_request" = "认证、请求头与超时";
 "editor.advanced_request_help" = "仅受保护接口或自定义请求行为需要";
 "editor.menu_bar_preview" = "菜单栏预览";
+"editor.status_indicator" = "状态指示灯";
+"editor.status_indicator_toggle" = "在菜单栏显示彩色指示灯";
+"editor.status_indicator_help" = "每个 Value 是颜色生效的最低值；达到多条规则时使用最高 Value 对应的颜色，低于所有规则时显示灰色。";
+"editor.status_indicator_color" = "颜色";
+"editor.status_indicator_empty" = "还没有 Value 与颜色映射。";
+"editor.status_indicator_add_rule" = "添加 Value 与颜色";
+"editor.status_indicator_choose_color" = "选择指示灯颜色";
+"editor.status_indicator_color_accessibility" = "指示灯颜色，当前为%@";
+"editor.status_indicator_rule_value_accessibility" = "第 %lld 条颜色映射的 Value";
+"editor.status_indicator_delete_rule" = "删除此 Value 与颜色映射";
+"editor.status_indicator_delete_rule_accessibility" = "删除第 %lld 条 Value 与颜色映射";
 "editor.waiting_for_response" = "测试连接后即可配置数值提取。";
 "editor.data_source" = "数据源";
 "editor.prometheus_address" = "Prometheus 地址";
@@ -196,6 +220,9 @@
 "editor.validation.request_timeout_max" = "请求超时时间不能超过 60 秒";
 "editor.validation.request_timeout_range" = "请求超时时间需在 1–60 秒之间";
 "editor.validation.template_value_required" = "显示模板必须包含 ${value}";
+"editor.validation.status_indicator_rule_required" = "请至少添加一条 Value 与颜色映射";
+"editor.validation.status_indicator_value_invalid" = "状态指示灯的每个 Value 都必须是有效数字";
+"editor.validation.status_indicator_value_duplicate" = "状态指示灯的每个 Value 只能使用一次";
 "editor.validation.test_required" = "请先测试解析并成功";
 "editor.validation.valid_https_url" = "请填写有效的 HTTPS URL";
 "editor.validation.valid_prometheus_url" = "请填写有效的 HTTPS Prometheus 地址；本机地址可使用 HTTP";

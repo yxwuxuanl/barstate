@@ -24,6 +24,13 @@ struct MonitorCloningTests {
                 scriptBody: "function parse(response) { return 1; }"
             ),
             displayTemplate: "API ${value}%",
+            statusIndicator: StatusIndicatorConfiguration(
+                isEnabled: true,
+                rules: [
+                    StatusIndicatorRule(value: 70, color: .yellow),
+                    StatusIndicatorRule(value: 90, color: .pink)
+                ]
+            ),
             refreshInterval: 300,
             refreshIntervalUnit: .minutes,
             requestTimeout: 25,
@@ -43,6 +50,7 @@ struct MonitorCloningTests {
         #expect(clone.authentication == source.authentication)
         #expect(clone.parser == source.parser)
         #expect(clone.displayTemplate == source.displayTemplate)
+        #expect(clone.statusIndicator == source.statusIndicator)
         #expect(clone.refreshInterval == source.refreshInterval)
         #expect(clone.refreshIntervalUnit == source.refreshIntervalUnit)
         #expect(clone.requestTimeout == source.requestTimeout)

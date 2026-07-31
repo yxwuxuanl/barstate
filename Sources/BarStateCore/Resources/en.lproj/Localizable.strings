@@ -11,6 +11,19 @@
 "list.accessibility_separator" = ", ";
 "list.detail_separator" = " · ";
 
+"status_indicator.accessibility_color" = "%@ status indicator";
+"status_indicator.accessibility_unavailable" = "No matching status indicator rule";
+"status_indicator.accessibility_mixed" = "Multiple status indicator colors";
+"status_indicator.color.red" = "Red";
+"status_indicator.color.orange" = "Orange";
+"status_indicator.color.yellow" = "Yellow";
+"status_indicator.color.green" = "Green";
+"status_indicator.color.mint" = "Mint";
+"status_indicator.color.blue" = "Blue";
+"status_indicator.color.purple" = "Purple";
+"status_indicator.color.pink" = "Pink";
+"status_indicator.color.gray" = "Gray";
+
 "menu.quit" = "Quit BarState";
 "menu.about" = "About BarState";
 "menu.settings" = "Settings…";
@@ -116,6 +129,17 @@
 "editor.advanced_request" = "Authentication, Headers & Timeout";
 "editor.advanced_request_help" = "Only needed for protected endpoints or custom request behavior";
 "editor.menu_bar_preview" = "Menu Bar Preview";
+"editor.status_indicator" = "Status Indicator";
+"editor.status_indicator_toggle" = "Show a colored indicator in the menu bar";
+"editor.status_indicator_help" = "Each Value is a minimum. The highest matching Value sets the color; values below every rule appear gray.";
+"editor.status_indicator_color" = "Color";
+"editor.status_indicator_empty" = "No value-color mappings yet.";
+"editor.status_indicator_add_rule" = "Add Value and Color";
+"editor.status_indicator_choose_color" = "Choose an indicator color";
+"editor.status_indicator_color_accessibility" = "Indicator color, currently %@";
+"editor.status_indicator_rule_value_accessibility" = "Value for color mapping %lld";
+"editor.status_indicator_delete_rule" = "Delete this value-color mapping";
+"editor.status_indicator_delete_rule_accessibility" = "Delete value-color mapping %lld";
 "editor.waiting_for_response" = "Test the connection to unlock value extraction.";
 "editor.data_source" = "Data Source";
 "editor.prometheus_address" = "Prometheus Address";
@@ -196,6 +220,9 @@
 "editor.validation.request_timeout_max" = "The request timeout cannot exceed 60 seconds";
 "editor.validation.request_timeout_range" = "The request timeout must be between 1 and 60 seconds";
 "editor.validation.template_value_required" = "The display template must include ${value}";
+"editor.validation.status_indicator_rule_required" = "Add at least one value-color mapping";
+"editor.validation.status_indicator_value_invalid" = "Every status indicator value must be a valid number";
+"editor.validation.status_indicator_value_duplicate" = "Each status indicator value can only be used once";
 "editor.validation.test_required" = "Test the parser successfully before saving";
 "editor.validation.valid_https_url" = "Enter a valid HTTPS URL";
 "editor.validation.valid_prometheus_url" = "Enter a valid HTTPS Prometheus address; local endpoints may use HTTP";

@@ -119,6 +119,144 @@ public enum MenuBarPresentation: String, Codable, CaseIterable, Identifiable, Se
     }
 }
 
+public enum StatusIndicatorColor: String, Codable, CaseIterable, Identifiable, Sendable {
+    case red
+    case orange
+    case yellow
+    case green
+    case mint
+    case blue
+    case purple
+    case pink
+    case gray
+
+    public var id: String { rawValue }
+}
+
+public struct StatusIndicatorRule: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var value: Double
+    public var color: StatusIndicatorColor
+
+    public init(
+        id: UUID = UUID(),
+        value: Double = 0,
+        color: StatusIndicatorColor = .green
+    ) {
+        self.id = id
+        self.value = value
+        self.color = color
+    }
+}
+
+public enum StatusIndicatorAppearanceKind: Equatable, Sendable {
+    case matched
+    case unavailable
+    case mixed
+}
+
+public struct StatusIndicatorAppearance: Equatable, Sendable {
+    public let color: StatusIndicatorColor
+    public let kind: StatusIndicatorAppearanceKind
+
+    public init(
+        color: StatusIndicatorColor,
+        kind: StatusIndicatorAppearanceKind = .matched
+    ) {
+        self.color = color
+        self.kind = kind
+    }
+}
+
+public struct StatusIndicatorConfiguration: Codable, Equatable, Sendable {
+    public var isEnabled: Bool
+    public var rules: [StatusIndicatorRule]
+
+    public init(
+        isEnabled: Bool = false,
+        rules: [StatusIndicatorRule] = []
+    ) {
+        self.isEnabled = isEnabled
+        self.rules = rules
+    }
+
+    public var hasValidRules: Bool {
+        guard !rules.isEmpty, rules.allSatisfy({ $0.value.isFinite }) else { return false }
+        return Set(rules.map(\.value)).count == rules.count
+    }
+
+    public func appearance(for value: Double?) -> StatusIndicatorAppearance? {
+        guard isEnabled else { return nil }
+        guard let value, value.isFinite, hasValidRules else {
+            return StatusIndicatorAppearance(color: .gray, kind: .unavailable)
+        }
+        guard let rule = rules
+            .filter({ value >= $0.value })
+            .max(by: { $0.value < $1.value })
+        else {
+            return StatusIndicatorAppearance(color: .gray, kind: .unavailable)
+        }
+        return StatusIndicatorAppearance(color: rule.color)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case rules
+        // Compatibility with the earlier tier-based status indicator.
+        case direction
+        case warningThreshold
+        case criticalThreshold
+        case normalColor
+        case warningColor
+        case criticalColor
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        if let rules = try container.decodeIfPresent(
+            [StatusIndicatorRule].self,
+            forKey: .rules
+        ) {
+            self.init(isEnabled: isEnabled, rules: rules)
+            return
+        }
+
+        var migratedRules: [StatusIndicatorRule] = []
+        if let warningValue = try container.decodeIfPresent(
+            Double.self,
+            forKey: .warningThreshold
+        ) {
+            migratedRules.append(StatusIndicatorRule(
+                value: warningValue,
+                color: try container.decodeIfPresent(
+                    StatusIndicatorColor.self,
+                    forKey: .warningColor
+                ) ?? .orange
+            ))
+        }
+        if let criticalValue = try container.decodeIfPresent(
+            Double.self,
+            forKey: .criticalThreshold
+        ) {
+            migratedRules.append(StatusIndicatorRule(
+                value: criticalValue,
+                color: try container.decodeIfPresent(
+                    StatusIndicatorColor.self,
+                    forKey: .criticalColor
+                ) ?? .red
+            ))
+        }
+        self.init(isEnabled: isEnabled, rules: migratedRules)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(rules, forKey: .rules)
+    }
+}
+
 public struct AppPreferences: Codable, Equatable, Sendable {
     public static let minimumMenuBarCharacters = 8
     public static let defaultMenuBarCharacters = 24
@@ -396,6 +534,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public var requestHeaders: [RequestHeader]
     public var parser: ParserConfiguration
     public var displayTemplate: String
+    public var statusIndicator: StatusIndicatorConfiguration
     public var refreshInterval: TimeInterval
     public var refreshIntervalUnit: RefreshIntervalUnit
     public var requestTimeout: TimeInterval
@@ -414,6 +553,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         requestHeaders: [RequestHeader] = [],
         parser: ParserConfiguration = .init(),
         displayTemplate: String? = nil,
+        statusIndicator: StatusIndicatorConfiguration = .init(),
         label: String = "",
         unit: String = "",
         refreshInterval: TimeInterval = 60,
@@ -433,6 +573,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         self.requestHeaders = requestHeaders
         self.parser = parser
         self.displayTemplate = displayTemplate ?? "\(label)\(Self.valuePlaceholder)\(unit)"
+        self.statusIndicator = statusIndicator
         self.refreshInterval = Self.normalizedRefreshInterval(refreshInterval)
         self.refreshIntervalUnit = refreshIntervalUnit
         self.requestTimeout = Self.normalizedRequestTimeout(requestTimeout)
@@ -482,6 +623,10 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         displayText
     }
 
+    public var statusIndicatorAppearance: StatusIndicatorAppearance? {
+        statusIndicator.appearance(for: runtime.displayValue)
+    }
+
     public static func draft(order: Int) -> Monitor {
         Monitor(name: L10n.string("monitor.default_name"), order: order)
     }
@@ -496,6 +641,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         case requestHeaders
         case parser
         case displayTemplate
+        case statusIndicator
         case label
         case unit
         case refreshInterval
@@ -530,6 +676,10 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
             let legacyUnit = try container.decodeIfPresent(String.self, forKey: .unit) ?? ""
             displayTemplate = "\(legacyLabel)\(Self.valuePlaceholder)\(legacyUnit)"
         }
+        statusIndicator = try container.decodeIfPresent(
+            StatusIndicatorConfiguration.self,
+            forKey: .statusIndicator
+        ) ?? .init()
         refreshInterval = Self.normalizedRefreshInterval(
             try container.decode(TimeInterval.self, forKey: .refreshInterval)
         )
@@ -558,6 +708,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         try container.encode(requestHeaders, forKey: .requestHeaders)
         try container.encode(parser, forKey: .parser)
         try container.encode(displayTemplate, forKey: .displayTemplate)
+        try container.encode(statusIndicator, forKey: .statusIndicator)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(refreshIntervalUnit, forKey: .refreshIntervalUnit)
         try container.encode(requestTimeout, forKey: .requestTimeout)

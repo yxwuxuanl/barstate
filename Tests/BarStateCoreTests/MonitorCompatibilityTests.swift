@@ -14,6 +14,51 @@ struct MonitorCompatibilityTests {
         #expect(monitor.menuBarTitle == "气温30.1℃")
     }
 
+    @Test func statusIndicatorUsesTheHighestReachedValue() {
+        let configuration = StatusIndicatorConfiguration(
+            isEnabled: true,
+            rules: [
+                StatusIndicatorRule(value: 90, color: .red),
+                StatusIndicatorRule(value: 0, color: .green),
+                StatusIndicatorRule(value: 70, color: .orange)
+            ]
+        )
+
+        #expect(configuration.appearance(for: -1)?.kind == .unavailable)
+        #expect(configuration.appearance(for: -1)?.color == .gray)
+        #expect(configuration.appearance(for: 0)?.color == .green)
+        #expect(configuration.appearance(for: 69.9)?.color == .green)
+        #expect(configuration.appearance(for: 70)?.color == .orange)
+        #expect(configuration.appearance(for: 89.9)?.color == .orange)
+        #expect(configuration.appearance(for: 90)?.color == .red)
+        #expect(configuration.appearance(for: 120)?.color == .red)
+        #expect(configuration.appearance(for: 85)?.kind == .matched)
+    }
+
+    @Test func statusIndicatorHandlesDisabledUnmatchedAndDuplicateRules() {
+        let disabled = StatusIndicatorConfiguration()
+        #expect(disabled.appearance(for: 1) == nil)
+
+        let enabled = StatusIndicatorConfiguration(
+            isEnabled: true,
+            rules: [StatusIndicatorRule(value: 1, color: .blue)]
+        )
+        #expect(enabled.appearance(for: nil)?.kind == .unavailable)
+        #expect(enabled.appearance(for: 0)?.kind == .unavailable)
+        #expect(enabled.appearance(for: 0)?.color == .gray)
+        #expect(enabled.appearance(for: 2)?.color == .blue)
+
+        let invalid = StatusIndicatorConfiguration(
+            isEnabled: true,
+            rules: [
+                StatusIndicatorRule(value: 1, color: .green),
+                StatusIndicatorRule(value: 1, color: .red)
+            ]
+        )
+        #expect(!invalid.hasValidRules)
+        #expect(invalid.appearance(for: 1)?.kind == .unavailable)
+    }
+
     @Test func migratesLegacyLabelAndUnitToDisplayTemplate() throws {
         let monitor = Monitor(name: "气温", label: "气温 ", unit: "℃")
         let encoded = try JSONEncoder().encode(monitor)
@@ -26,6 +71,64 @@ struct MonitorCompatibilityTests {
         let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
 
         #expect(decoded.displayTemplate == "气温 ${value}℃")
+    }
+
+    @Test func defaultsLegacyMonitorToDisabledStatusIndicator() throws {
+        let monitor = Monitor(
+            name: "legacy",
+            statusIndicator: StatusIndicatorConfiguration(isEnabled: true)
+        )
+        let encoded = try JSONEncoder().encode(monitor)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "statusIndicator")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
+
+        #expect(decoded.statusIndicator == StatusIndicatorConfiguration())
+        #expect(decoded.statusIndicatorAppearance == nil)
+    }
+
+    @Test func migratesPreviouslySavedThresholdsToMinimumValueRules() throws {
+        let monitor = Monitor(name: "legacy indicator")
+        let encoded = try JSONEncoder().encode(monitor)
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["statusIndicator"] = [
+            "isEnabled": true,
+            "direction": "higherIsWorse",
+            "warningThreshold": 60,
+            "criticalThreshold": 80,
+            "normalColor": "blue",
+            "warningColor": "purple",
+            "criticalColor": "pink"
+        ]
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(Monitor.self, from: legacyData)
+
+        #expect(decoded.statusIndicator.isEnabled)
+        #expect(decoded.statusIndicator.rules.map(\.value) == [60, 80])
+        #expect(decoded.statusIndicator.rules.map(\.color) == [.purple, .pink])
+    }
+
+    @Test func roundTripsCustomValueColorRules() throws {
+        let monitor = Monitor(
+            name: "custom mappings",
+            statusIndicator: StatusIndicatorConfiguration(
+                isEnabled: true,
+                rules: [
+                    StatusIndicatorRule(value: -1, color: .mint),
+                    StatusIndicatorRule(value: 3.14, color: .purple)
+                ]
+            )
+        )
+
+        let decoded = try JSONDecoder().decode(
+            Monitor.self,
+            from: JSONEncoder().encode(monitor)
+        )
+
+        #expect(decoded.statusIndicator == monitor.statusIndicator)
     }
 
     @Test func migratesLegacyResponseBodyAndRequestTime() throws {

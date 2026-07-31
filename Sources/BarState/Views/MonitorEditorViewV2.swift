@@ -138,6 +138,29 @@ struct MonitorEditorViewV2: View {
                                         displayTemplateHelp
                                     }
                                 }
+                                GridRow(alignment: .top) {
+                                    fieldLabel(L10n.string("editor.status_indicator"))
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Toggle(
+                                            L10n.string("editor.status_indicator_toggle"),
+                                            isOn: $draft.statusIndicator.isEnabled
+                                        )
+                                        .toggleStyle(.switch)
+
+                                        Text(L10n.string("editor.status_indicator_help"))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+
+                                        if draft.statusIndicator.isEnabled {
+                                            Divider()
+                                                .padding(.vertical, 2)
+                                            StatusIndicatorEditorControls(
+                                                configuration: $draft.statusIndicator
+                                            )
+                                            .padding(.bottom, 2)
+                                        }
+                                    }
+                                }
                             }
                             menuBarPreview
                         }
@@ -314,12 +337,17 @@ struct MonitorEditorViewV2: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             Spacer(minLength: 20)
-            Text(previewDisplayText)
-                .font(.system(.body, design: .rounded).weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: 280, alignment: .trailing)
-                .help(previewDisplayText)
+            HStack(spacing: 7) {
+                if let previewIndicatorAppearance {
+                    StatusIndicatorDot(appearance: previewIndicatorAppearance)
+                }
+                Text(previewDisplayText)
+                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: 280, alignment: .trailing)
+            .help(previewDisplayText)
         }
         .padding(.leading, EditorFormLayoutMetrics.labelWidth + 16)
         .accessibilityElement(children: .combine)
@@ -331,6 +359,10 @@ struct MonitorEditorViewV2: View {
             of: Monitor.valuePlaceholder,
             with: valueText
         )
+    }
+
+    private var previewIndicatorAppearance: StatusIndicatorAppearance? {
+        draft.statusIndicator.appearance(for: previewValue)
     }
 
     private var connectionStageComplete: Bool {
@@ -1301,6 +1333,25 @@ struct MonitorEditorViewV2: View {
             throw EditorValidationErrorV2(
                 L10n.string("editor.validation.template_value_required")
             )
+        }
+        if draft.statusIndicator.isEnabled {
+            guard !draft.statusIndicator.rules.isEmpty else {
+                throw EditorValidationErrorV2(
+                    L10n.string("editor.validation.status_indicator_rule_required")
+                )
+            }
+            guard draft.statusIndicator.rules.allSatisfy({ $0.value.isFinite }) else {
+                throw EditorValidationErrorV2(
+                    L10n.string("editor.validation.status_indicator_value_invalid")
+                )
+            }
+            guard Set(draft.statusIndicator.rules.map(\.value)).count
+                == draft.statusIndicator.rules.count
+            else {
+                throw EditorValidationErrorV2(
+                    L10n.string("editor.validation.status_indicator_value_duplicate")
+                )
+            }
         }
 
         try validateRequestConfiguration()

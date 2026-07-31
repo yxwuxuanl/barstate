@@ -6,7 +6,11 @@ BarState is a macOS menu bar monitoring app with two separate modes: send HTTP r
 
 ## App Preview
 
-![BarState settings, menu bar status, and monitor list](docs/images/barstate-app-overview-en.png)
+<p align="center">
+  <img src="docs/images/barstate-menubar-popover.png" alt="BarState menu bar and monitor popover" width="540">
+</p>
+
+![BarState monitor settings](docs/images/barstate-settings.png)
 
 ## System Requirements
 

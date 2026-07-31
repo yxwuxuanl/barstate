@@ -223,12 +223,18 @@ private struct MonitorPopoverRow: View {
                 .layoutPriority(1)
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(monitor.displayText)
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
-                        .foregroundStyle(valueColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.62)
-                        .help(L10n.format("popover.display_value", monitor.displayText))
+                    HStack(spacing: 8) {
+                        if let appearance = monitor.statusIndicatorAppearance {
+                            StatusIndicatorDot(appearance: appearance, diameter: 9)
+                                .opacity(showsStaleValue || !monitor.isEnabled ? 0.45 : 1)
+                        }
+                        Text(monitor.displayText)
+                            .font(.system(size: 30, weight: .semibold, design: .rounded))
+                            .foregroundStyle(valueColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.62)
+                    }
+                    .help(L10n.format("popover.display_value", monitor.displayText))
 
                     if showsStaleValue {
                         Text(L10n.string("popover.previous_value"))
@@ -352,6 +358,9 @@ private struct MonitorPopoverRow: View {
 
     private var accessibilityLabel: String {
         var components = [monitor.name, monitor.displayText, statusPrimaryText]
+        if let appearance = monitor.statusIndicatorAppearance {
+            components.append(appearance.accessibilityText)
+        }
         if let statusSecondaryText {
             components.append(statusSecondaryText)
         }

@@ -183,6 +183,14 @@ final class AppController {
                 ],
                 parser: ParserConfiguration(jsonPath: "$.temperature"),
                 displayTemplate: L10n.string("preview.temperature.template"),
+                statusIndicator: StatusIndicatorConfiguration(
+                    isEnabled: true,
+                    rules: [
+                        StatusIndicatorRule(value: 25, color: .blue),
+                        StatusIndicatorRule(value: 30, color: .orange),
+                        StatusIndicatorRule(value: 35, color: .red)
+                    ]
+                ),
                 showsInMenuBar: true,
                 order: 0,
                 runtime: MonitorRuntimeState(

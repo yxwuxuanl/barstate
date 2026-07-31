@@ -73,6 +73,7 @@ struct EditorEditableConfiguration: Equatable {
     let requestHeaders: [RequestHeader]
     let parser: ParserConfiguration
     let displayTemplate: String
+    let statusIndicator: StatusIndicatorConfiguration
     let refreshInterval: TimeInterval
     let refreshIntervalUnit: RefreshIntervalUnit
     let requestTimeout: TimeInterval
@@ -86,6 +87,7 @@ struct EditorEditableConfiguration: Equatable {
         requestHeaders = monitor.requestHeaders
         parser = monitor.parser
         displayTemplate = monitor.displayTemplate
+        statusIndicator = monitor.statusIndicator
         refreshInterval = monitor.refreshInterval
         refreshIntervalUnit = monitor.refreshIntervalUnit
         requestTimeout = monitor.requestTimeout

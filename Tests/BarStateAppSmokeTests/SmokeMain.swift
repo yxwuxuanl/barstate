@@ -34,6 +34,21 @@ struct BarStateAppSmokeTests {
         )
         precondition(monitor.displayText == "气温30.1℃", "display template rendering failed")
 
+        let indicator = StatusIndicatorConfiguration(
+            isEnabled: true,
+            rules: [
+                StatusIndicatorRule(value: 0, color: .green),
+                StatusIndicatorRule(value: 1, color: .orange),
+                StatusIndicatorRule(value: 2, color: .purple)
+            ]
+        )
+        precondition(indicator.appearance(for: 0)?.color == .green)
+        precondition(indicator.appearance(for: 1)?.color == .orange)
+        precondition(indicator.appearance(for: 2)?.color == .purple)
+        precondition(indicator.appearance(for: 1.5)?.color == .orange)
+        precondition(indicator.appearance(for: 3)?.color == .purple)
+        precondition(indicator.appearance(for: -1)?.kind == .unavailable)
+
         let parsed = try JavaScriptEvaluator.evaluate(
             responseData: Data("remaining=30.1".utf8),
             scriptBody: "function(response) { return response.split('=')[1] }"
@@ -78,6 +93,7 @@ struct BarStateAppSmokeTests {
         legacyObject.removeValue(forKey: "promQL")
         legacyObject.removeValue(forKey: "requestTimeout")
         legacyObject.removeValue(forKey: "displayTemplate")
+        legacyObject.removeValue(forKey: "statusIndicator")
         legacyObject["label"] = "气温 "
         legacyObject["unit"] = "℃"
         var legacyRuntime = legacyObject["runtime"] as! [String: Any]
@@ -93,6 +109,10 @@ struct BarStateAppSmokeTests {
             from: JSONSerialization.data(withJSONObject: legacyObject)
         )
         precondition(migrated.displayTemplate == "气温 ${value}℃", "display template migration failed")
+        precondition(
+            migrated.statusIndicator == StatusIndicatorConfiguration(),
+            "legacy monitors must keep the status indicator disabled"
+        )
         precondition(migrated.sourceKind == .httpAPI, "legacy monitors must remain HTTP API monitors")
         precondition(migrated.promQL.isEmpty, "legacy monitors must use an empty PromQL query")
         precondition(
