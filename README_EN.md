@@ -1,6 +1,6 @@
 # BarState
 
-[简体中文](README.md) | [English](README_EN.md)
+[English](README.md) | [简体中文](README_ZH.md)
 
 BarState is a macOS menu bar monitoring app with two separate modes: send HTTP requests and parse API responses, or run PromQL queries to read Prometheus metrics. Values from either mode can be displayed directly in the menu bar.
 
