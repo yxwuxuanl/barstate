@@ -26,6 +26,7 @@ struct SettingsView: View {
     private enum MonitorCreationKind {
         case httpAPI
         case prometheus
+        case codexQuota
         case jsonTemplate
     }
 
@@ -150,6 +151,9 @@ struct SettingsView: View {
                     Button(L10n.string("settings.add_prometheus")) {
                         requestNavigation(.create(.prometheus))
                     }
+                    Button(L10n.string("settings.add_codex_quota")) {
+                        requestNavigation(.create(.codexQuota))
+                    }
                     Divider()
                     Button(L10n.string("settings.add_template")) {
                         requestNavigation(.create(.jsonTemplate))
@@ -265,7 +269,7 @@ struct SettingsView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
 
-            if monitor.sourceKind == .prometheus {
+            if monitor.sourceKind != .httpAPI {
                 Text(monitor.sourceKind.displayName)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -343,6 +347,7 @@ struct SettingsView: View {
             FirstMonitorWelcomeView(
                 onCreateHTTP: { requestNavigation(.create(.httpAPI)) },
                 onCreatePrometheus: { requestNavigation(.create(.prometheus)) },
+                onCreateCodexQuota: { requestNavigation(.create(.codexQuota)) },
                 onUseJSONTemplate: { requestNavigation(.create(.jsonTemplate)) }
             )
         } else {
@@ -580,6 +585,13 @@ struct SettingsView: View {
         case .prometheus:
             draft.sourceKind = .prometheus
             draft.urlString = "https://"
+        case .codexQuota:
+            draft.sourceKind = .codexQuota
+            draft.name = L10n.string("monitor.codex_quota_name")
+            draft.urlString = CodexQuota.endpointURLString
+            draft.displayTemplate = L10n.string("monitor.codex_quota_template")
+            draft.refreshInterval = 5 * 60
+            draft.refreshIntervalUnit = .minutes
         case .jsonTemplate:
             draft.sourceKind = .httpAPI
             draft.name = L10n.string("monitor.json_template_name")

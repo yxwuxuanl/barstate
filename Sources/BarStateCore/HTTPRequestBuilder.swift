@@ -4,8 +4,17 @@ public enum HTTPRequestBuilder {
     public static func makeRequest(
         for monitor: Monitor,
         timeoutInterval: TimeInterval? = nil,
-        at date: Date = Date()
+        at date: Date = Date(),
+        codexAuthFileURL: URL? = nil
     ) throws -> URLRequest {
+        if monitor.sourceKind == .codexQuota {
+            return try makeCodexQuotaRequest(
+                for: monitor,
+                timeoutInterval: timeoutInterval,
+                authFileURL: codexAuthFileURL ?? CodexAuthFile.defaultURL
+            )
+        }
+
         let resolvedURLString = RequestTemplateResolver.resolve(monitor.urlString, at: date)
         guard var components = URLComponents(string: resolvedURLString),
               components.host != nil
@@ -78,6 +87,33 @@ public enum HTTPRequestBuilder {
             request.setValue(resolvedHeader.value, forHTTPHeaderField: normalizedName)
         }
 
+        return request
+    }
+
+    private static func makeCodexQuotaRequest(
+        for monitor: Monitor,
+        timeoutInterval: TimeInterval?,
+        authFileURL: URL
+    ) throws -> URLRequest {
+        let credentials = try CodexAuthFile.load(from: authFileURL)
+        guard let url = URL(string: CodexQuota.endpointURLString) else {
+            throw MonitoringError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = Monitor.normalizedRequestTimeout(
+            timeoutInterval ?? monitor.requestTimeout
+        )
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(
+            "Bearer \(credentials.accessToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+        if let accountID = credentials.accountID {
+            request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+        }
         return request
     }
 

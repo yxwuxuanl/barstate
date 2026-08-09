@@ -5,6 +5,7 @@ import SwiftUI
 struct FirstMonitorWelcomeView: View {
     let onCreateHTTP: () -> Void
     let onCreatePrometheus: () -> Void
+    let onCreateCodexQuota: () -> Void
     let onUseJSONTemplate: () -> Void
 
     var body: some View {
@@ -40,6 +41,13 @@ struct FirstMonitorWelcomeView: View {
                     detail: L10n.string("onboarding.prometheus_description"),
                     systemImage: "chart.xyaxis.line",
                     action: onCreatePrometheus
+                )
+                Divider().padding(.leading, 52)
+                onboardingAction(
+                    title: L10n.string("onboarding.codex_quota_title"),
+                    detail: L10n.string("onboarding.codex_quota_description"),
+                    systemImage: "gauge.with.dots.needle.33percent",
+                    action: onCreateCodexQuota
                 )
                 Divider().padding(.leading, 52)
                 onboardingAction(

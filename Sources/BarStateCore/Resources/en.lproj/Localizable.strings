@@ -58,6 +58,7 @@
 "settings.menu_bar_characters" = "%lld characters";
 "settings.add_http" = "New HTTP API Monitor";
 "settings.add_prometheus" = "New Prometheus Monitor";
+"settings.add_codex_quota" = "New Codex Quota Monitor";
 "settings.add_template" = "Use JSON Value Template";
 "settings.discard_title" = "Discard unsaved changes?";
 "settings.discard" = "Discard Changes";
@@ -72,6 +73,8 @@
 "onboarding.http_description" = "Read a number from JSON or plain text.";
 "onboarding.prometheus_title" = "Prometheus";
 "onboarding.prometheus_description" = "Run an instant PromQL query that returns one value.";
+"onboarding.codex_quota_title" = "Codex Quota";
+"onboarding.codex_quota_description" = "Show the remaining primary-window quota from your local Codex sign-in.";
 "onboarding.template_title" = "JSON Value Template";
 "onboarding.template_description" = "Start with a common $.data.value extraction pattern.";
 "onboarding.steps" = "Connect → Extract → Display";
@@ -118,11 +121,13 @@
 "editor.section.basic" = "Basic Settings";
 "editor.section.request" = "Request Settings";
 "editor.section.query" = "Query Settings";
+"editor.section.codex_quota" = "Codex Quota Settings";
 "editor.section.parser" = "Parser Settings";
 "editor.stage_connect" = "Connect";
 "editor.stage_extract" = "Extract";
 "editor.stage_display" = "Display";
 "editor.stage_query" = "Query";
+"editor.stage_quota" = "Quota";
 "editor.stage_completed" = "Completed";
 "editor.stage_current" = "Current step";
 "editor.stage_upcoming" = "Upcoming step";
@@ -143,6 +148,8 @@
 "editor.waiting_for_response" = "Test the connection to unlock value extraction.";
 "editor.data_source" = "Data Source";
 "editor.prometheus_address" = "Prometheus Address";
+"editor.codex_quota_endpoint" = "Quota Endpoint";
+"editor.codex_quota_endpoint_help" = "Uses the access token and account ID from ~/.codex/auth.json. Credentials are read at request time and are not copied into BarState settings.";
 "editor.prometheus_endpoint_help" = "Calls /api/v1/query automatically; local endpoints may use HTTP";
 "editor.prometheus_query_help" = "Instant query · Result must be a single number";
 "editor.display_template" = "Display Template";
@@ -187,6 +194,8 @@
 "editor.test_request" = "Test Request";
 "editor.querying" = "Querying…";
 "editor.test_query" = "Test Query";
+"editor.codex_quota_checking" = "Checking Quota…";
+"editor.codex_quota_test" = "Test Quota";
 "editor.parser_type" = "Parser";
 "editor.parser_expression" = "Expression";
 "editor.jsonpath_accessibility" = "JSONPath expression";
@@ -204,11 +213,17 @@
 "editor.prometheus_response_preview" = "Query Response Preview";
 "editor.manual_query_response" = "Latest Query Response";
 "editor.latest_query_response" = "Latest Monitor Query Response";
+"editor.codex_quota_response_preview" = "Quota Response Preview";
+"editor.manual_codex_quota_response" = "Latest Quota Test Response";
+"editor.latest_codex_quota_response" = "Latest Monitor Quota Response";
 "editor.prometheus_query_success" = "Query succeeded: %@";
+"editor.codex_quota_success" = "Quota check succeeded: %@%% remaining";
 "editor.new_monitor_test_required" = "Test the request and parse it successfully before creating this monitor";
 "editor.new_prometheus_monitor_test_required" = "Test the query successfully before creating this monitor";
+"editor.new_codex_quota_monitor_test_required" = "Test the quota successfully before creating this monitor";
 "editor.parser_retest_required" = "The parser configuration changed. Test it again successfully before saving";
 "editor.prometheus_retest_required" = "The Prometheus query configuration changed. Test it successfully before saving";
+"editor.codex_quota_retest_required" = "The Codex quota configuration changed. Test it successfully before saving";
 "editor.switches_applied" = "Switches applied automatically";
 "editor.unsuccessful_status" = "non-success status";
 "editor.parsed_non_success" = "Parsed %@, but the request returned %@";
@@ -309,6 +324,8 @@
 "recovery.export_title" = "Export Recovered BarState Configuration";
 
 "monitor.default_name" = "New Monitor";
+"monitor.codex_quota_name" = "Codex Quota";
+"monitor.codex_quota_template" = "Codex ${value}%";
 "monitor.json_template_name" = "JSON Value";
 "monitor.interval.seconds" = "sec";
 "monitor.interval.minutes" = "min";
@@ -339,6 +356,11 @@
 "error.prometheus_missing_value" = "The Prometheus response does not contain a usable value";
 "error.prometheus_invalid_envelope" = "The response is not a Prometheus API object";
 "error.prometheus_unknown_error" = "The server did not provide error details";
+"error.codex_auth_file_not_found" = "~/.codex/auth.json was not found. Sign in to Codex first";
+"error.codex_auth_file_unreadable" = "~/.codex/auth.json could not be read";
+"error.codex_access_token_missing" = "~/.codex/auth.json does not contain an access token. Sign in to Codex again";
+"error.codex_quota_missing" = "The Codex response does not contain a primary quota window";
+"error.codex_quota_invalid" = "The Codex response contains an invalid quota percentage";
 "error.script" = "Script error: %@";
 "error.script_timeout" = "Script execution timed out";
 "error.request" = "Request failed: %@";

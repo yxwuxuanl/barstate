@@ -16,9 +16,7 @@ struct MonitorCreationProgressView: View {
             )
             connector(isComplete: connectionComplete)
             stage(
-                title: sourceKind == .prometheus
-                    ? L10n.string("editor.stage_query")
-                    : L10n.string("editor.stage_extract"),
+                title: extractionStageTitle,
                 isComplete: extractionComplete,
                 isCurrent: connectionComplete && !extractionComplete
             )
@@ -39,6 +37,14 @@ struct MonitorCreationProgressView: View {
                 .stroke(.separator.opacity(0.7), lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private var extractionStageTitle: String {
+        switch sourceKind {
+        case .httpAPI: L10n.string("editor.stage_extract")
+        case .prometheus: L10n.string("editor.stage_query")
+        case .codexQuota: L10n.string("editor.stage_quota")
+        }
     }
 
     private func stage(title: String, isComplete: Bool, isCurrent: Bool) -> some View {

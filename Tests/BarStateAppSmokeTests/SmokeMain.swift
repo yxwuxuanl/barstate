@@ -16,6 +16,7 @@ struct BarStateAppSmokeTests {
 
         try testResponseAndParserCompatibility()
         try testPrometheusQueryCompatibility()
+        try testCodexQuotaCompatibility()
         try testLocalizationAndErrorPersistence()
         try testPersistenceRecoveryAndPermissions()
         try await testRecoveryWriteProtection()
@@ -185,6 +186,57 @@ struct BarStateAppSmokeTests {
                 "multiple Prometheus series returned the wrong error"
             )
         }
+    }
+
+    private static func testCodexQuotaCompatibility() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BarStateCodexQuotaTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let authURL = directory.appendingPathComponent("auth.json")
+        try Data(
+            #"{"tokens":{"access_token":"secret-token","account_id":"account-123"}}"#.utf8
+        ).write(to: authURL, options: .atomic)
+
+        let monitor = Monitor(
+            name: "Codex Quota",
+            sourceKind: .codexQuota,
+            urlString: "https://ignored.example.com",
+            requestTimeout: 24
+        )
+        let request = try HTTPRequestBuilder.makeRequest(
+            for: monitor,
+            codexAuthFileURL: authURL
+        )
+        precondition(
+            request.url?.absoluteString == CodexQuota.endpointURLString,
+            "Codex quota must use the fixed wham usage endpoint"
+        )
+        precondition(
+            request.value(forHTTPHeaderField: "Authorization") == "Bearer secret-token",
+            "Codex access token was not added to the request"
+        )
+        precondition(
+            request.value(forHTTPHeaderField: "ChatGPT-Account-Id") == "account-123",
+            "Codex account ID was not added to the request"
+        )
+
+        let response = Data(
+            #"{"user_id":"user-123","email":"person@example.com","rate_limit":{"primary_window":{"used_percent":12.5}}}"#.utf8
+        )
+        let remainingPercent = try CodexQuotaResponseParser.remainingPercent(from: response)
+        precondition(
+            remainingPercent == 87.5,
+            "Codex used percentage was not converted to remaining quota"
+        )
+        let snapshotData = CodexQuotaResponseParser.quotaOnlySnapshotData(from: response)
+        let snapshotText = String(decoding: snapshotData, as: UTF8.self)
+        precondition(snapshotText.contains("used_percent"), "quota snapshot lost usage data")
+        precondition(!snapshotText.contains("user-123"), "quota snapshot retained user ID")
+        precondition(
+            !snapshotText.contains("person@example.com"),
+            "quota snapshot retained email address"
+        )
     }
 
     private static func testLocalizationAndErrorPersistence() throws {

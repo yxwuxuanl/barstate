@@ -366,7 +366,7 @@ struct MonitorEditorViewV2: View {
     }
 
     private var connectionStageComplete: Bool {
-        if draft.sourceKind == .prometheus {
+        if draft.sourceKind != .httpAPI {
             return parseSucceeded
         }
         guard let response else { return false }
@@ -382,9 +382,11 @@ struct MonitorEditorViewV2: View {
     }
 
     private var requestSectionTitle: String {
-        draft.sourceKind == .prometheus
-            ? L10n.string("editor.section.query")
-            : L10n.string("editor.section.request")
+        switch draft.sourceKind {
+        case .httpAPI: L10n.string("editor.section.request")
+        case .prometheus: L10n.string("editor.section.query")
+        case .codexQuota: L10n.string("editor.section.codex_quota")
+        }
     }
 
     private var requestConfigurationSection: some View {
@@ -399,15 +401,25 @@ struct MonitorEditorViewV2: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .frame(width: 280)
+                    .frame(width: 420)
                 }
 
                 GridRow(alignment: .top) {
                     fieldLabel(endpointLabel)
                     VStack(alignment: .leading, spacing: 7) {
-                        TextField(endpointPlaceholder, text: $draft.urlString)
-                            .textContentType(.URL)
-                            .accessibilityLabel(endpointLabel)
+                        if draft.sourceKind == .codexQuota {
+                            Text(CodexQuota.endpointURLString)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                            Text(L10n.string("editor.codex_quota_endpoint_help"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            TextField(endpointPlaceholder, text: $draft.urlString)
+                                .textContentType(.URL)
+                                .accessibilityLabel(endpointLabel)
+                        }
                         if draft.sourceKind == .prometheus {
                             Text(L10n.string("editor.prometheus_endpoint_help"))
                                 .font(.caption)
@@ -468,12 +480,14 @@ struct MonitorEditorViewV2: View {
                     }
                 }
 
-                GridRow(alignment: .top) {
-                    Color.clear.frame(width: EditorFormLayoutMetrics.labelWidth, height: 1)
-                    advancedRequestToggle
+                if draft.sourceKind != .codexQuota {
+                    GridRow(alignment: .top) {
+                        Color.clear.frame(width: EditorFormLayoutMetrics.labelWidth, height: 1)
+                        advancedRequestToggle
+                    }
                 }
 
-                if showsAdvancedRequestSettings {
+                if showsAdvancedRequestSettings, draft.sourceKind != .codexQuota {
                     GridRow {
                         fieldLabel(L10n.string("editor.authentication"))
                         Picker(
@@ -552,7 +566,7 @@ struct MonitorEditorViewV2: View {
                     }
                 }
 
-                if showsAdvancedRequestSettings {
+                if showsAdvancedRequestSettings, draft.sourceKind != .codexQuota {
                     GridRow {
                         fieldLabel(L10n.string("editor.request_timeout"))
                         HStack(spacing: 8) {
@@ -575,7 +589,7 @@ struct MonitorEditorViewV2: View {
                 }
             }
 
-            if showsAdvancedRequestSettings {
+            if showsAdvancedRequestSettings, draft.sourceKind != .codexQuota {
                 requestHeadersSection
             }
             requestActionRow
@@ -593,9 +607,11 @@ struct MonitorEditorViewV2: View {
     }
 
     private var endpointLabel: String {
-        draft.sourceKind == .prometheus
-            ? L10n.string("editor.prometheus_address")
-            : "HTTPS URL"
+        switch draft.sourceKind {
+        case .httpAPI: "HTTPS URL"
+        case .prometheus: L10n.string("editor.prometheus_address")
+        case .codexQuota: L10n.string("editor.codex_quota_endpoint")
+        }
     }
 
     private var advancedRequestToggle: some View {
@@ -631,9 +647,11 @@ struct MonitorEditorViewV2: View {
     }
 
     private var endpointPlaceholder: String {
-        draft.sourceKind == .prometheus
-            ? "https://prometheus.example.com"
-            : "https://api.example.com/value?ts=${TIMESTAMP}"
+        switch draft.sourceKind {
+        case .httpAPI: "https://api.example.com/value?ts=${TIMESTAMP}"
+        case .prometheus: "https://prometheus.example.com"
+        case .codexQuota: CodexQuota.endpointURLString
+        }
     }
 
     private var requestHeadersSection: some View {
@@ -772,10 +790,10 @@ struct MonitorEditorViewV2: View {
     private var requestActionRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Button(requestActionTitle) {
-                if draft.sourceKind == .prometheus {
-                    testPrometheusQuery()
-                } else {
+                if draft.sourceKind == .httpAPI {
                     testRequest()
+                } else {
+                    testDirectValueSource()
                 }
             }
             .disabled(isRequesting)
@@ -789,7 +807,7 @@ struct MonitorEditorViewV2: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if draft.sourceKind == .prometheus, let parseMessage {
+            } else if draft.sourceKind != .httpAPI, let parseMessage {
                 Label(
                     parseMessage,
                     systemImage: parseSucceeded
@@ -806,14 +824,14 @@ struct MonitorEditorViewV2: View {
     }
 
     private var requestActionTitle: String {
-        if isRequesting {
-            return draft.sourceKind == .prometheus
-                ? L10n.string("editor.querying")
-                : L10n.string("editor.requesting")
+        switch (draft.sourceKind, isRequesting) {
+        case (.httpAPI, true): L10n.string("editor.requesting")
+        case (.httpAPI, false): L10n.string("editor.test_request")
+        case (.prometheus, true): L10n.string("editor.querying")
+        case (.prometheus, false): L10n.string("editor.test_query")
+        case (.codexQuota, true): L10n.string("editor.codex_quota_checking")
+        case (.codexQuota, false): L10n.string("editor.codex_quota_test")
         }
-        return draft.sourceKind == .prometheus
-            ? L10n.string("editor.test_query")
-            : L10n.string("editor.test_request")
     }
 
     private var parserSection: some View {
@@ -988,6 +1006,13 @@ struct MonitorEditorViewV2: View {
             return usesManualResponse
                 ? L10n.string("editor.manual_query_response")
                 : L10n.string("editor.latest_query_response")
+        } else if draft.sourceKind == .codexQuota {
+            guard response != nil else {
+                return L10n.string("editor.codex_quota_response_preview")
+            }
+            return usesManualResponse
+                ? L10n.string("editor.manual_codex_quota_response")
+                : L10n.string("editor.latest_codex_quota_response")
         } else {
             guard response != nil else { return L10n.string("editor.response_preview") }
             return usesManualResponse
@@ -1006,7 +1031,7 @@ struct MonitorEditorViewV2: View {
 
     private var requiresSuccessfulTest: Bool {
         guard !requiresInitialSuccessfulTest else { return true }
-        if draft.sourceKind == .prometheus {
+        if draft.sourceKind != .httpAPI {
             return currentTestConfiguration != baselineTestConfiguration
         }
         return currentTestConfiguration.parser != baselineTestConfiguration.parser
@@ -1019,13 +1044,17 @@ struct MonitorEditorViewV2: View {
     private var saveRequirementMessage: String? {
         guard isSuccessfulTestRequiredAndMissing else { return nil }
         if requiresInitialSuccessfulTest {
-            return draft.sourceKind == .prometheus
-                ? L10n.string("editor.new_prometheus_monitor_test_required")
-                : L10n.string("editor.new_monitor_test_required")
+            return switch draft.sourceKind {
+            case .httpAPI: L10n.string("editor.new_monitor_test_required")
+            case .prometheus: L10n.string("editor.new_prometheus_monitor_test_required")
+            case .codexQuota: L10n.string("editor.new_codex_quota_monitor_test_required")
+            }
         }
-        return draft.sourceKind == .prometheus
-            ? L10n.string("editor.prometheus_retest_required")
-            : L10n.string("editor.parser_retest_required")
+        return switch draft.sourceKind {
+        case .httpAPI: L10n.string("editor.parser_retest_required")
+        case .prometheus: L10n.string("editor.prometheus_retest_required")
+        case .codexQuota: L10n.string("editor.codex_quota_retest_required")
+        }
     }
 
     private var isResponseStale: Bool {
@@ -1145,7 +1174,7 @@ struct MonitorEditorViewV2: View {
         }
     }
 
-    private func testPrometheusQuery() {
+    private func testDirectValueSource() {
         do {
             try validateRequestConfiguration()
         } catch {
@@ -1181,8 +1210,11 @@ struct MonitorEditorViewV2: View {
                 parseSucceeded = true
                 previewValue = value
                 requestFailure = nil
+                let successKey = monitor.sourceKind == .codexQuota
+                    ? "editor.codex_quota_success"
+                    : "editor.prometheus_query_success"
                 parseMessage = L10n.format(
-                    "editor.prometheus_query_success",
+                    successKey,
                     NumberDisplayFormatter.string(from: value)
                 )
                 successfulTestConfiguration = testConfiguration
@@ -1284,7 +1316,12 @@ struct MonitorEditorViewV2: View {
     private func save() {
         do {
             try validate()
-            if draft.authentication.kind == .none {
+            if draft.sourceKind == .codexQuota {
+                draft.urlString = CodexQuota.endpointURLString
+                draft.promQL = ""
+                draft.authentication = .init()
+                draft.requestHeaders = []
+            } else if draft.authentication.kind == .none {
                 draft.authentication = .init()
             }
             draft.requestHeaders = draft.requestHeaders.map { header in
@@ -1374,6 +1411,10 @@ struct MonitorEditorViewV2: View {
             throw EditorValidationErrorV2(
                 L10n.string("editor.validation.request_timeout_range")
             )
+        }
+
+        if draft.sourceKind == .codexQuota {
+            return
         }
 
         let validationDate = Date()

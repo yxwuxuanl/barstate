@@ -6,5 +6,9 @@
     <true/>
     <key>com.apple.security.network.client</key>
     <true/>
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+    <array>
+        <string>/.codex/auth.json</string>
+    </array>
 </dict>
 </plist>

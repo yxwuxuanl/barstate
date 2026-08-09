@@ -115,8 +115,15 @@ actor APIClient: MonitorValueFetching {
         do {
             let payload = try await fetchPayloadBeforeDeadline(for: monitor)
             let requestDuration = Self.elapsedTime(since: startedAt)
+            let snapshotPayload = monitor.sourceKind == .codexQuota
+                ? HTTPPayload(
+                    data: CodexQuotaResponseParser.quotaOnlySnapshotData(from: payload.data),
+                    response: payload.response,
+                    protocolName: payload.protocolName
+                )
+                : payload
             let response = Self.makeSnapshot(
-                from: payload,
+                from: snapshotPayload,
                 requestedAt: requestedAt,
                 requestDuration: requestDuration
             )
@@ -204,6 +211,12 @@ actor APIClient: MonitorValueFetching {
         do {
             let value: Double
             switch monitor.sourceKind {
+            case .codexQuota:
+                guard response.bodyKind == .json else {
+                    throw MonitoringError.responseBodyNotJSON
+                }
+                value = try CodexQuotaResponseParser.remainingPercent(from: response.bodyData)
+
             case .prometheus:
                 guard response.bodyKind == .json else {
                     throw MonitoringError.responseBodyNotJSON

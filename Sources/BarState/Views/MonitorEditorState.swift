@@ -11,10 +11,10 @@ struct EditorRequestConfiguration: Equatable {
 
     init(monitor: Monitor) {
         sourceKind = monitor.sourceKind
-        urlString = monitor.urlString
+        urlString = monitor.sourceKind == .codexQuota ? "" : monitor.urlString
         promQL = monitor.sourceKind == .prometheus ? monitor.promQL : ""
-        authentication = monitor.authentication
-        requestHeaders = monitor.requestHeaders
+        authentication = monitor.sourceKind == .codexQuota ? .init() : monitor.authentication
+        requestHeaders = monitor.sourceKind == .codexQuota ? [] : monitor.requestHeaders
         requestTimeout = monitor.requestTimeout
     }
 }

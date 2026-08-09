@@ -2,7 +2,9 @@
 
 [English](README.md) | [简体中文](README_ZH.md)
 
-BarState is a macOS menu bar monitoring app with two separate modes: send HTTP requests and parse API responses, or run PromQL queries to read Prometheus metrics. Values from either mode can be displayed directly in the menu bar.
+BarState is a macOS menu bar monitoring app with three data sources: HTTP APIs, Prometheus queries, and Codex quota. Values from any source can be displayed directly in the menu bar.
+
+[User Guide](docs/USER_GUIDE.md) · [Releases](../../releases) · [Privacy](PRIVACY.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## App Preview
 
@@ -20,7 +22,7 @@ BarState is a macOS menu bar monitoring app with two separate modes: send HTTP r
 ## Download and Install
 
 > [!WARNING]
-> The current release is not signed with an Apple Developer ID and has not been notarized by Apple. Download the app only from this repository's Releases page.
+> The current release is ad hoc signed, not signed with an Apple Developer ID, and has not been notarized by Apple. Download the app only from this repository's Releases page.
 
 1. Download the installer for your Mac architecture from [Releases](../../releases):
    - Apple Silicon: `BarState-macos-arm64.dmg`
@@ -154,6 +156,17 @@ The parser expressions below match the example responses. Adjust them to fit the
 
    Use a display template such as `Temperature ${value}°C`.
 
+## Codex Quota Monitoring
+
+Codex Quota monitoring reads the primary rate-limit window for the Codex account currently signed in on this Mac and displays the remaining percentage.
+
+1. Sign in to Codex so that `~/.codex/auth.json` exists.
+2. In BarState, choose Add → New Codex Quota Monitor.
+3. Click Test Quota, then set the display template and refresh interval.
+4. Save and enable the monitor.
+
+BarState calls `https://chatgpt.com/backend-api/wham/usage` and calculates the displayed value as `100 - used_percent`. Credentials are read from `~/.codex/auth.json` for each request and are not copied into BarState settings. Stored response previews retain only the `rate_limit` object, excluding the account ID, user ID, and email address.
+
 ## PromQL Query Monitoring
 
 PromQL query monitoring reads Prometheus metrics directly and does not use JSONPath or JavaScript. BarState runs Prometheus instant queries on a schedule and displays the resulting single numeric value in the menu bar.
@@ -217,7 +230,7 @@ BarState stores monitor settings in:
 ~/Library/Application Support/BarState/
 ```
 
-Basic Authentication credentials, request header contents, and the most recent complete response are stored locally. Avoid long-lived or highly privileged credentials, and prefer dedicated credentials that can be revoked.
+Basic Authentication credentials, request header contents, and the most recent complete response are stored locally. Codex credentials are not copied into BarState, and Codex response storage is limited to rate-limit data. Avoid long-lived or highly privileged credentials, and prefer dedicated credentials that can be revoked.
 
 If configuration files cannot be read, BarState enters a read-only recovery mode so later edits cannot overwrite them. Starting fresh archives the old files with `.corrupt-timestamp.json` names first.
 
@@ -247,3 +260,15 @@ swift test
 ```
 
 The built app is available at `.build/BarState.app`.
+
+## Privacy and Security
+
+BarState has no analytics, advertising, developer-operated backend, or telemetry. It connects to endpoints you configure and, when enabled, the Codex quota endpoint described above. Monitor data is stored locally on your Mac. Read the [Privacy Notice](PRIVACY.md) and [Security Policy](SECURITY.md) before using sensitive endpoints.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development requirements and required checks. Release history is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+BarState is free and open-source software released under the [MIT License](LICENSE).

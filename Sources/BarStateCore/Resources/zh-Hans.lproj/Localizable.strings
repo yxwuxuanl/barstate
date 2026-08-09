@@ -58,6 +58,7 @@
 "settings.menu_bar_characters" = "%lld 个字符";
 "settings.add_http" = "新建 HTTP API 监控";
 "settings.add_prometheus" = "新建 Prometheus 监控";
+"settings.add_codex_quota" = "新建 Codex Quota 监控";
 "settings.add_template" = "使用 JSON 数值模板";
 "settings.discard_title" = "放弃未保存的修改？";
 "settings.discard" = "放弃修改";
@@ -72,6 +73,8 @@
 "onboarding.http_description" = "从 JSON 或纯文本响应中读取数值。";
 "onboarding.prometheus_title" = "Prometheus";
 "onboarding.prometheus_description" = "执行返回单个数值的 PromQL 即时查询。";
+"onboarding.codex_quota_title" = "Codex Quota";
+"onboarding.codex_quota_description" = "显示本地 Codex 登录账号的主要周期剩余额度。";
 "onboarding.template_title" = "JSON 数值模板";
 "onboarding.template_description" = "从常用的 $.data.value 提取方式开始。";
 "onboarding.steps" = "连接 → 提取 → 展示";
@@ -118,11 +121,13 @@
 "editor.section.basic" = "基本设置";
 "editor.section.request" = "请求设置";
 "editor.section.query" = "查询设置";
+"editor.section.codex_quota" = "Codex Quota 设置";
 "editor.section.parser" = "解析设置";
 "editor.stage_connect" = "连接";
 "editor.stage_extract" = "提取";
 "editor.stage_display" = "展示";
 "editor.stage_query" = "查询";
+"editor.stage_quota" = "额度";
 "editor.stage_completed" = "已完成";
 "editor.stage_current" = "当前步骤";
 "editor.stage_upcoming" = "后续步骤";
@@ -143,6 +148,8 @@
 "editor.waiting_for_response" = "测试连接后即可配置数值提取。";
 "editor.data_source" = "数据源";
 "editor.prometheus_address" = "Prometheus 地址";
+"editor.codex_quota_endpoint" = "额度接口";
+"editor.codex_quota_endpoint_help" = "使用 ~/.codex/auth.json 中的 access token 和账号 ID；凭据仅在请求时读取，不会复制到 BarState 设置中。";
 "editor.prometheus_endpoint_help" = "自动调用 /api/v1/query；本机地址可使用 HTTP";
 "editor.prometheus_query_help" = "即时查询 · 结果需为单个数值";
 "editor.display_template" = "显示模板";
@@ -187,6 +194,8 @@
 "editor.test_request" = "测试请求";
 "editor.querying" = "正在查询…";
 "editor.test_query" = "测试查询";
+"editor.codex_quota_checking" = "正在查询额度…";
+"editor.codex_quota_test" = "测试额度";
 "editor.parser_type" = "解析方式";
 "editor.parser_expression" = "解析表达式";
 "editor.jsonpath_accessibility" = "JSONPath 解析式";
@@ -204,11 +213,17 @@
 "editor.prometheus_response_preview" = "查询响应预览";
 "editor.manual_query_response" = "最新查询响应";
 "editor.latest_query_response" = "最近监控查询响应";
+"editor.codex_quota_response_preview" = "额度响应预览";
+"editor.manual_codex_quota_response" = "最近一次额度测试响应";
+"editor.latest_codex_quota_response" = "最近一次监控额度响应";
 "editor.prometheus_query_success" = "查询成功：%@";
+"editor.codex_quota_success" = "额度查询成功：剩余 %@%%";
 "editor.new_monitor_test_required" = "新建监控项前，请先测试请求并解析成功";
 "editor.new_prometheus_monitor_test_required" = "新建监控项前，请先测试查询并成功";
+"editor.new_codex_quota_monitor_test_required" = "新建监控项前，请先测试额度并成功";
 "editor.parser_retest_required" = "解析配置已修改，请重新测试解析并成功";
 "editor.prometheus_retest_required" = "Prometheus 查询配置已修改，请重新测试查询并成功";
+"editor.codex_quota_retest_required" = "Codex 额度配置已修改，请重新测试额度并成功";
 "editor.switches_applied" = "开关已自动应用";
 "editor.unsuccessful_status" = "非成功状态";
 "editor.parsed_non_success" = "解析值 %@，但请求返回 %@";
@@ -309,6 +324,8 @@
 "recovery.export_title" = "导出已恢复的 BarState 配置";
 
 "monitor.default_name" = "新监控项";
+"monitor.codex_quota_name" = "Codex Quota";
+"monitor.codex_quota_template" = "Codex ${value}%";
 "monitor.json_template_name" = "JSON 数值";
 "monitor.interval.seconds" = "秒";
 "monitor.interval.minutes" = "分";
@@ -339,6 +356,11 @@
 "error.prometheus_missing_value" = "Prometheus 响应中缺少可用数值";
 "error.prometheus_invalid_envelope" = "响应不是 Prometheus API 对象";
 "error.prometheus_unknown_error" = "服务器未提供错误详情";
+"error.codex_auth_file_not_found" = "未找到 ~/.codex/auth.json，请先登录 Codex";
+"error.codex_auth_file_unreadable" = "无法读取 ~/.codex/auth.json";
+"error.codex_access_token_missing" = "~/.codex/auth.json 中没有 access token，请重新登录 Codex";
+"error.codex_quota_missing" = "Codex 响应中缺少主要额度周期";
+"error.codex_quota_invalid" = "Codex 响应中的额度百分比无效";
 "error.script" = "脚本错误：%@";
 "error.script_timeout" = "脚本执行超时";
 "error.request" = "请求失败：%@";

@@ -30,6 +30,11 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
     case prometheusMultipleSeries(Int)
     case prometheusUnsupportedResultType(String)
     case prometheusMissingValue
+    case codexAuthFileNotFound
+    case codexAuthFileUnreadable
+    case codexAccessTokenMissing
+    case codexQuotaMissing
+    case codexQuotaInvalid
     case script(String)
     case scriptRuntimeUnavailable
     case scriptUnknownException
@@ -87,6 +92,16 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
             L10n.format("error.prometheus_unsupported_result_type", resultType)
         case .prometheusMissingValue:
             L10n.string("error.prometheus_missing_value")
+        case .codexAuthFileNotFound:
+            L10n.string("error.codex_auth_file_not_found")
+        case .codexAuthFileUnreadable:
+            L10n.string("error.codex_auth_file_unreadable")
+        case .codexAccessTokenMissing:
+            L10n.string("error.codex_access_token_missing")
+        case .codexQuotaMissing:
+            L10n.string("error.codex_quota_missing")
+        case .codexQuotaInvalid:
+            L10n.string("error.codex_quota_invalid")
         case let .script(message): L10n.format("error.script", message)
         case .scriptRuntimeUnavailable:
             L10n.format("error.script", L10n.string("error.script_runtime_unavailable"))

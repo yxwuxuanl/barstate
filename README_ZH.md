@@ -2,7 +2,9 @@
 
 [English](README.md) | [简体中文](README_ZH.md)
 
-BarState 是一款 macOS 菜单栏监控工具，提供两种独立的使用方式：发送 HTTP 请求并解析 API 响应，或执行 PromQL 查询读取 Prometheus 指标。两种方式取得的数值都可以直接显示在菜单栏中。
+BarState 是一款 macOS 菜单栏监控工具，支持 HTTP API、Prometheus 查询和 Codex 额度三种数据源。任意数据源取得的数值都可以直接显示在菜单栏中。
+
+[使用指南](docs/USER_GUIDE.md) · [下载](../../releases) · [隐私说明](PRIVACY.md) · [安全策略](SECURITY.md) · [版本记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 需要完整的操作说明时，请参阅 [BarState 使用指南](docs/USER_GUIDE.md)。
 
@@ -22,7 +24,7 @@ BarState 是一款 macOS 菜单栏监控工具，提供两种独立的使用方�
 ## 下载与安装
 
 > [!WARNING]
-> 当前 Release 未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只从本仓库的 Releases 页面下载安装包。
+> 当前 Release 仅使用临时签名（ad hoc signing），未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只从本仓库的 Releases 页面下载安装包。
 
 1. 在 [Releases](../../releases) 页面下载与 Mac 架构对应的安装包：
    - Apple Silicon：`BarState-macos-arm64.dmg`
@@ -156,6 +158,17 @@ function(response) {
 
    显示模板可设置为 `温度 ${value}℃`。
 
+## Codex 额度监控
+
+Codex 额度监控读取本机当前登录 Codex 账号的主要限额周期，并显示剩余百分比。
+
+1. 登录 Codex，确保 `~/.codex/auth.json` 已存在。
+2. 在 BarState 中选择“新增”→“新建 Codex Quota 监控”。
+3. 点击“测试额度”，再设置显示模板和刷新周期。
+4. 保存并启用监控。
+
+BarState 会调用 `https://chatgpt.com/backend-api/wham/usage`，按 `100 - used_percent` 计算显示值。每次请求时都会从 `~/.codex/auth.json` 读取凭据，但不会将凭据复制到 BarState 设置。持久化的响应预览只保留 `rate_limit` 对象，不包含账号 ID、用户 ID 或邮箱地址。
+
 ## PromQL 查询监控
 
 PromQL 查询监控用于直接读取 Prometheus 指标，不需要配置 JSONPath 或 JavaScript。BarState 会定时调用 Prometheus 即时查询接口，并将查询得到的单个数值显示在菜单栏中。
@@ -219,7 +232,7 @@ PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。�
 ~/Library/Application Support/BarState/
 ```
 
-Basic Authentication 凭据、请求头内容和最近一次完整响应会保存在本机。请避免使用长期有效或权限过高的凭据，并尽量使用可随时撤销的专用凭据。
+Basic Authentication 凭据、请求头内容和最近一次完整响应会保存在本机。Codex 凭据不会复制到 BarState，Codex 响应只保存限额数据。请避免使用长期有效或权限过高的凭据，并尽量使用可随时撤销的专用凭据。
 
 配置异常时 BarState 会进入只读恢复模式，避免后续操作覆盖损坏文件。选择重新开始前，旧文件会先以 `.corrupt-时间戳.json` 的形式归档。
 
@@ -249,3 +262,15 @@ swift test
 ```
 
 构建完成后的应用位于 `.build/BarState.app`。
+
+## 隐私与安全
+
+BarState 不包含分析、广告或遥测服务，也不使用开发者运营的后端；应用会连接你主动配置的接口，并在启用时连接上述 Codex 额度接口。监控数据保存在本机。为敏感接口配置监控前，请阅读[隐私说明](PRIVACY.md)和[安全策略](SECURITY.md)。
+
+## 参与贡献
+
+欢迎提交 Issue 和 Pull Request。开发环境及检查要求请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变化记录在 [CHANGELOG.md](CHANGELOG.md) 中。
+
+## 开源许可
+
+BarState 是自由开源软件，采用 [MIT License](LICENSE) 发布。

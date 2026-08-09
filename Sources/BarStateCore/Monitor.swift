@@ -3,6 +3,7 @@ import Foundation
 public enum MonitorSourceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case httpAPI
     case prometheus
+    case codexQuota
 
     public var id: String { rawValue }
 
@@ -10,6 +11,7 @@ public enum MonitorSourceKind: String, Codable, CaseIterable, Identifiable, Send
         switch self {
         case .httpAPI: "HTTP API"
         case .prometheus: "Prometheus"
+        case .codexQuota: "Codex Quota"
         }
     }
 }
