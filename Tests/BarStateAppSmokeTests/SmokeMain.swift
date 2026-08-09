@@ -194,6 +194,15 @@ struct BarStateAppSmokeTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let authURL = directory.appendingPathComponent("auth.json")
+        do {
+            _ = try CodexAuthFile.load(from: authURL)
+            preconditionFailure("a missing Codex auth file must fail")
+        } catch let error as MonitoringError {
+            precondition(
+                error == .codexAuthFileNotFound,
+                "a missing Codex auth file returned the wrong error"
+            )
+        }
         try Data(
             #"{"tokens":{"access_token":"secret-token","account_id":"account-123"}}"#.utf8
         ).write(to: authURL, options: .atomic)

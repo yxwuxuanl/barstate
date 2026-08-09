@@ -45,11 +45,13 @@ public enum CodexAuthFile {
     }
 
     public static func load(from url: URL = defaultURL) throws -> CodexCredentials {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw MonitoringError.codexAuthFileNotFound
+        }
+
         let data: Data
         do {
             data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        } catch let error as CocoaError where error.code == .fileNoSuchFile {
-            throw MonitoringError.codexAuthFileNotFound
         } catch {
             throw MonitoringError.codexAuthFileUnreadable
         }
