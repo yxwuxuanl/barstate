@@ -24,7 +24,24 @@ BarState 是一款 macOS 菜单栏监控工具，支持 HTTP API、Prometheus �
 ## 下载与安装
 
 > [!WARNING]
-> 当前 Release 仅使用临时签名（ad hoc signing），未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只从本仓库的 Releases 页面下载安装包。
+> 当前 Release 仅使用临时签名（ad hoc signing），未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只通过官方 Homebrew Tap 或本仓库的 Releases 页面安装。
+
+### Homebrew
+
+通过官方 Tap 安装 BarState。Homebrew 会根据 Apple Silicon 或 Intel Mac 自动选择对应版本：
+
+```bash
+brew install --cask yxwuxuanl/tap/barstate
+```
+
+升级或卸载：
+
+```bash
+brew upgrade --cask barstate
+brew uninstall --cask barstate
+```
+
+### 手动安装
 
 1. 在 [Releases](../../releases) 页面下载与 Mac 架构对应的安装包：
    - Apple Silicon：`BarState-macos-arm64.dmg`

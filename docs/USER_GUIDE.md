@@ -9,7 +9,22 @@ BarState 是一款 macOS 菜单栏监控工具。它会按设定周期查询 HTT
 - macOS 15 或更高版本
 - Apple Silicon（M1 或更新的 Mac）和 Intel Mac 均为首要支持平台
 
-### 安装 Release 版本
+### 使用 Homebrew 安装
+
+运行以下命令即可从官方 Tap 安装 BarState。Homebrew 会根据 Apple Silicon 或 Intel Mac 自动选择对应版本：
+
+```bash
+brew install --cask yxwuxuanl/tap/barstate
+```
+
+升级或卸载：
+
+```bash
+brew upgrade --cask barstate
+brew uninstall --cask barstate
+```
+
+### 手动安装 Release 版本
 
 1. 从本仓库的 Releases 页面下载与 Mac 架构对应的安装包：
    - Apple Silicon：`BarState-macos-arm64.dmg`
@@ -18,7 +33,7 @@ BarState 是一款 macOS 菜单栏监控工具。它会按设定周期查询 HTT
 3. 双击 `BarState.app`。
 4. 如果 macOS 阻止启动，打开“系统设置” → “隐私与安全性”，在“安全性”区域找到 BarState，点击“仍要打开”并确认。
 
-当前 Release 仅使用临时签名（ad hoc signing），未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只使用本仓库提供的安装包，不要为了运行 BarState 而全局关闭 Gatekeeper。
+当前 Release 仅使用临时签名（ad hoc signing），未使用 Apple Developer ID 签名，也未经过 Apple 公证。请只通过官方 Homebrew Tap 或本仓库的 Releases 页面安装，不要为了运行 BarState 而全局关闭 Gatekeeper。
 
 启动后，BarState 会出现在菜单栏。没有任何监控项显示在菜单栏时，入口名称为 `BarState`。
 

@@ -22,7 +22,24 @@ BarState is a macOS menu bar monitoring app with three data sources: HTTP APIs, 
 ## Download and Install
 
 > [!WARNING]
-> The current release is ad hoc signed, not signed with an Apple Developer ID, and has not been notarized by Apple. Download the app only from this repository's Releases page.
+> The current release is ad hoc signed, not signed with an Apple Developer ID, and has not been notarized by Apple. Install only from the official Homebrew tap or this repository's Releases page.
+
+### Homebrew
+
+Install BarState from the official tap. Homebrew automatically selects the correct build for Apple Silicon or Intel Macs:
+
+```bash
+brew install --cask yxwuxuanl/tap/barstate
+```
+
+Upgrade or uninstall it with:
+
+```bash
+brew upgrade --cask barstate
+brew uninstall --cask barstate
+```
+
+### Manual Installation
 
 1. Download the installer for your Mac architecture from [Releases](../../releases):
    - Apple Silicon: `BarState-macos-arm64.dmg`
