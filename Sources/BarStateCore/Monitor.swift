@@ -354,6 +354,7 @@ public struct RequestHeader: Identifiable, Codable, Equatable, Sendable {
 }
 
 public struct MonitorRuntimeState: Codable, Equatable, Sendable {
+    public var alertState: MonitorAlertState
     public var lastValue: Double?
     public var lastSuccessAt: Date?
     public var lastAttemptAt: Date?
@@ -363,6 +364,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
     public var lastError: MonitoringError?
 
     public init(
+        alertState: MonitorAlertState = .init(),
         lastValue: Double? = nil,
         lastSuccessAt: Date? = nil,
         lastAttemptAt: Date? = nil,
@@ -373,6 +375,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
         consecutiveFailures: Int = 0,
         lastError: MonitoringError? = nil
     ) {
+        self.alertState = alertState
         self.lastValue = lastValue
         self.lastSuccessAt = lastSuccessAt
         self.lastAttemptAt = lastAttemptAt
@@ -463,6 +466,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case alertState
         case lastValue
         case lastSuccessAt
         case lastAttemptAt
@@ -477,6 +481,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        alertState = try container.decodeIfPresent(MonitorAlertState.self, forKey: .alertState) ?? .init()
         lastValue = try container.decodeIfPresent(Double.self, forKey: .lastValue)
         lastSuccessAt = try container.decodeIfPresent(Date.self, forKey: .lastSuccessAt)
         lastAttemptAt = try container.decodeIfPresent(Date.self, forKey: .lastAttemptAt)
@@ -509,6 +514,7 @@ public struct MonitorRuntimeState: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(alertState, forKey: .alertState)
         try container.encodeIfPresent(lastValue, forKey: .lastValue)
         try container.encodeIfPresent(lastSuccessAt, forKey: .lastSuccessAt)
         try container.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
@@ -530,6 +536,8 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var sourceKind: MonitorSourceKind
+    public var preset: DataSourcePreset?
+    public var prometheusTemplate: PrometheusTemplate?
     public var urlString: String
     public var promQL: String
     public var authentication: HTTPAuthentication
@@ -537,6 +545,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public var parser: ParserConfiguration
     public var displayTemplate: String
     public var statusIndicator: StatusIndicatorConfiguration
+    public var alertRule: MonitorAlertRule
     public var refreshInterval: TimeInterval
     public var refreshIntervalUnit: RefreshIntervalUnit
     public var requestTimeout: TimeInterval
@@ -549,6 +558,8 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(),
         name: String,
         sourceKind: MonitorSourceKind = .httpAPI,
+        preset: DataSourcePreset? = nil,
+        prometheusTemplate: PrometheusTemplate? = nil,
         urlString: String = "https://",
         promQL: String = "",
         authentication: HTTPAuthentication = .init(),
@@ -556,6 +567,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         parser: ParserConfiguration = .init(),
         displayTemplate: String? = nil,
         statusIndicator: StatusIndicatorConfiguration = .init(),
+        alertRule: MonitorAlertRule = .init(),
         label: String = "",
         unit: String = "",
         refreshInterval: TimeInterval = 60,
@@ -569,6 +581,8 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         self.id = id
         self.name = name
         self.sourceKind = sourceKind
+        self.preset = preset
+        self.prometheusTemplate = prometheusTemplate
         self.urlString = urlString
         self.promQL = promQL
         self.authentication = authentication
@@ -576,6 +590,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         self.parser = parser
         self.displayTemplate = displayTemplate ?? "\(label)\(Self.valuePlaceholder)\(unit)"
         self.statusIndicator = statusIndicator
+        self.alertRule = alertRule
         self.refreshInterval = Self.normalizedRefreshInterval(refreshInterval)
         self.refreshIntervalUnit = refreshIntervalUnit
         self.requestTimeout = Self.normalizedRequestTimeout(requestTimeout)
@@ -588,6 +603,23 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
     public var displayedNumber: String {
         guard let value = runtime.displayValue else { return "--" }
         return NumberDisplayFormatter.string(from: value)
+    }
+
+    public var sourceDisplayName: String {
+        if sourceKind == .httpAPI, let preset { return preset.provider.displayName }
+        return sourceKind.displayName
+    }
+
+    /// Fields that can change the meaning or provenance of a sampled value.
+    public func hasSameValueConfiguration(as other: Monitor) -> Bool {
+        sourceKind == other.sourceKind
+            && preset == other.preset
+            && prometheusTemplate == other.prometheusTemplate
+            && urlString == other.urlString
+            && promQL == other.promQL
+            && authentication == other.authentication
+            && requestHeaders == other.requestHeaders
+            && parser == other.parser
     }
 
     public var displayText: String {
@@ -637,6 +669,8 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         case id
         case name
         case sourceKind
+        case preset
+        case prometheusTemplate
         case urlString
         case promQL
         case authentication
@@ -644,6 +678,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         case parser
         case displayTemplate
         case statusIndicator
+        case alertRule
         case label
         case unit
         case refreshInterval
@@ -663,6 +698,8 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
             MonitorSourceKind.self,
             forKey: .sourceKind
         ) ?? .httpAPI
+        preset = try container.decodeIfPresent(DataSourcePreset.self, forKey: .preset)
+        prometheusTemplate = try container.decodeIfPresent(PrometheusTemplate.self, forKey: .prometheusTemplate)
         urlString = try container.decode(String.self, forKey: .urlString)
         promQL = try container.decodeIfPresent(String.self, forKey: .promQL) ?? ""
         authentication = try container.decodeIfPresent(
@@ -678,6 +715,7 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
             let legacyUnit = try container.decodeIfPresent(String.self, forKey: .unit) ?? ""
             displayTemplate = "\(legacyLabel)\(Self.valuePlaceholder)\(legacyUnit)"
         }
+        alertRule = try container.decodeIfPresent(MonitorAlertRule.self, forKey: .alertRule) ?? .init()
         statusIndicator = try container.decodeIfPresent(
             StatusIndicatorConfiguration.self,
             forKey: .statusIndicator
@@ -704,12 +742,15 @@ public struct Monitor: Identifiable, Codable, Equatable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(sourceKind, forKey: .sourceKind)
+        try container.encodeIfPresent(preset, forKey: .preset)
+        try container.encodeIfPresent(prometheusTemplate, forKey: .prometheusTemplate)
         try container.encode(urlString, forKey: .urlString)
         try container.encode(promQL, forKey: .promQL)
         try container.encode(authentication, forKey: .authentication)
         try container.encode(requestHeaders, forKey: .requestHeaders)
         try container.encode(parser, forKey: .parser)
         try container.encode(displayTemplate, forKey: .displayTemplate)
+        try container.encode(alertRule, forKey: .alertRule)
         try container.encode(statusIndicator, forKey: .statusIndicator)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(refreshIntervalUnit, forKey: .refreshIntervalUnit)

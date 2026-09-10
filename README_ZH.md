@@ -2,13 +2,21 @@
 
 [English](README.md) | [简体中文](README_ZH.md)
 
-BarState 是一款 macOS 菜单栏监控工具，支持 HTTP API、Prometheus 查询和 Codex 额度三种数据源。任意数据源取得的数值都可以直接显示在菜单栏中。
+BarState 是一款 macOS 菜单栏监控工具，支持服务余额、HTTP API 数值、Prometheus 指标和本机 Codex 额度。任意数据源取得的数值都可以直接显示在菜单栏中。
 
 [使用指南](docs/USER_GUIDE.md) · [下载](../../releases) · [隐私说明](PRIVACY.md) · [安全策略](SECURITY.md) · [版本记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
 
 需要完整的操作说明时，请参阅 [BarState 使用指南](docs/USER_GUIDE.md)。
 
-## 界面预览
+## 1.0.0 更新
+
+BarState 1.0.0 加入了原生 Settings 分区、DeepSeek / OpenRouter / SiliconFlow 中国站预设、四种 Prometheus 模板、数据新鲜度和可选本地提醒，并移除了菜单栏刷新时临时出现的图标，减少闪动。
+
+查看 [完整迭代计划](docs/NEXT_ITERATION.md)、[验收记录](docs/ITERATION_PROGRESS.md) 和 [使用指南](docs/USER_GUIDE.md)。DeepSeek 与现有 Codex 额度已完成真实账户验证，打包版通知投递和点击定位也已通过；OpenRouter / SiliconFlow 账户、实际重新登录与睡眠/网络恢复、VoiceOver 导航按用户决定本轮跳过，仍未验证。
+
+![设置窗口，中文浅色，示例数据](docs/images/iteration-settings-zh-light.jpg)
+
+## 早期版本界面预览
 
 <p align="center">
   <img src="docs/images/barstate-menubar-popover.png" alt="BarState 菜单栏与监控弹窗" width="540">
@@ -68,13 +76,13 @@ HTTP 请求监控适合从普通 API 响应中提取数值。BarState 定时发�
 ### 创建 HTTP 请求监控
 
 1. 启动 BarState，点击菜单栏中的 `BarState`，选择“设置…”。
-2. 点击左侧的“新增”，将“数据源”保持为 `API`。
+2. 点击左侧“新增”，选择“自定义 HTTP API”。
 3. 填写监控项名称和 HTTPS 接口地址。
 4. 如有需要，配置 Basic Authentication 或添加请求头。
 5. 点击“测试请求”，确认接口返回了预期内容。
 6. 选择 JSONPath 或 JavaScript 解析方式，填写解析表达式。
 7. 点击“测试解析”，确认能够得到数值。
-8. 设置显示模板和刷新周期，然后保存。
+8. 设置刷新周期，在“菜单栏显示”中填写模板，然后保存。
 9. 开启“启用监控”；需要在菜单栏直接显示结果时，再开启“显示在菜单栏”。
 
 新建 HTTP 请求监控必须先完成请求测试并成功解析，之后才能保存。
@@ -180,7 +188,7 @@ function(response) {
 Codex 额度监控读取本机当前登录 Codex 账号的主要限额周期，并显示剩余百分比。
 
 1. 登录 Codex，确保 `~/.codex/auth.json` 已存在。
-2. 在 BarState 中选择“新增”→“新建 Codex Quota 监控”。
+2. 在 BarState 中选择“新增”→“Codex”。
 3. 点击“测试额度”，再设置显示模板和刷新周期。
 4. 保存并启用监控。
 
@@ -192,15 +200,15 @@ PromQL 查询监控用于直接读取 Prometheus 指标，不需要配置 JSONPa
 
 ### 创建 PromQL 查询监控
 
-1. 新建监控项，将“数据源”切换为 `Prometheus`。
-2. 填写 Prometheus 地址和 PromQL。
+1. 点击“新增”，选择 `Prometheus`。
+2. 填写 Prometheus 地址，选择模板并指定目标，或填写自定义 PromQL。
 3. 如有需要，配置 Basic Authentication 或添加认证请求头。
 4. 点击“测试查询”，确认查询能够得到单个数值。
 5. 设置显示模板和刷新周期，保存并启用监控。
 
 BarState 会在 Prometheus 地址后自动补全 `/api/v1/query`。远程地址必须使用 HTTPS；`localhost`、`127.x.x.x` 和 `::1` 等本机环回地址可以使用 HTTP。
 
-PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。如果查询返回多条时间序列，请使用 `sum()`、`avg()`、`max()` 等聚合函数，或添加更精确的标签筛选。新建监控项或修改查询配置后，需要先点击“测试查询”并成功，才能保存。
+PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。如果返回多条时间序列，请先细化目标标签；只有确实需要汇总这些序列时才使用聚合函数。新建监控项或修改查询配置后，需要先点击“测试查询”并成功，才能保存。
 
 ### 三个常用场景
 
@@ -236,6 +244,8 @@ PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。�
 
 ## 其他设置
 
+应用级偏好集中在侧栏底部的“通用设置”；监控自己的显示和提醒在右侧对应分区。
+
 - “登录时启动”：登录 macOS 后自动打开 BarState。
 - “语言”：支持跟随系统、简体中文和 English；更改后重新启动 BarState 生效。
 - “菜单栏”：可选择每项独立显示或单一聚合入口。
@@ -246,10 +256,10 @@ PromQL 必须返回一个标量或仅包含一条时间序列的即时向量。�
 监控配置保存在：
 
 ```text
-~/Library/Application Support/BarState/
+~/Library/Containers/com.barstate.BarState/Data/Library/Application Support/BarState/
 ```
 
-Basic Authentication 凭据、请求头内容和最近一次完整响应会保存在本机。Codex 凭据不会复制到 BarState，Codex 响应只保存限额数据。请避免使用长期有效或权限过高的凭据，并尽量使用可随时撤销的专用凭据。
+未使用应用沙盒的源码运行环境可能使用 `~/Library/Application Support/BarState/`。Basic Authentication 凭据、预设 API Key、请求头内容和最近响应保存在本机。服务预设只保留必要指标及诊断摘要；自定义 HTTP 和 Prometheus 保留最近响应。Codex 凭据不会复制到 BarState，Codex 响应只保存限额数据。请避免使用长期有效或权限过高的凭据，并尽量使用可随时撤销的专用凭据。
 
 配置异常时 BarState 会进入只读恢复模式，避免后续操作覆盖损坏文件。选择重新开始前，旧文件会先以 `.corrupt-时间戳.json` 的形式归档。
 
@@ -257,7 +267,7 @@ Basic Authentication 凭据、请求头内容和最近一次完整响应会保�
 
 1. 退出 BarState。
 2. 将 `BarState.app` 移到废纸篓。
-3. 如需同时删除全部监控配置，再删除 `~/Library/Application Support/BarState/`。
+3. 如需同时删除全部监控配置，再删除 `~/Library/Containers/com.barstate.BarState/Data/Library/Application Support/BarState/`。
 
 删除配置目录后无法恢复其中的数据。
 
@@ -278,7 +288,7 @@ swift test
 ./scripts/test-app-smoke.sh
 ```
 
-构建完成后的应用位于 `.build/BarState.app`。
+构建完成后的应用位于 `.build/BarState.app`。如果遇到实施记录中的本机 Command Line Tools / SDK 混装问题，可用 `./scripts/test-local-toolchain.sh` 运行同一套测试。构建与冒烟脚本支持用 `BARSTATE_BUILD_ARCH=arm64` 或 `x86_64` 选择架构，以 `BARSTATE_BUILD_DIR` 指定输出目录。
 
 ## 隐私与安全
 

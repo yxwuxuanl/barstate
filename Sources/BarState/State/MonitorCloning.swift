@@ -12,5 +12,6 @@ func makeMonitorClone(from source: Monitor, name: String, order: Int) -> Monitor
     }
     clone.order = order
     clone.runtime = .init()
+    clone.alertRule.isEnabled = false
     return clone
 }

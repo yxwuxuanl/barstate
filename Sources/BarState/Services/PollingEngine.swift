@@ -15,7 +15,7 @@ struct PollingStatus: Equatable, Sendable {
 
 actor PollingEngine {
     typealias ResultHandler = @Sendable (
-        UUID,
+        Monitor,
         FetchOutcome,
         Date
     ) async -> Void
@@ -188,7 +188,7 @@ actor PollingEngine {
         if nextDue[monitorID] == nil {
             nextDue[monitorID] = date.addingTimeInterval(monitor.refreshInterval)
         }
-        await resultHandler(monitorID, outcome, date)
+        await resultHandler(monitor, outcome, date)
         launchDueRequests(at: date)
     }
 
@@ -229,11 +229,7 @@ actor PollingEngine {
     }
 
     private static func requestConfigurationChanged(from old: Monitor, to new: Monitor) -> Bool {
-        old.sourceKind != new.sourceKind
-            || old.urlString != new.urlString
-            || old.promQL != new.promQL
-            || old.requestHeaders != new.requestHeaders
-            || old.parser != new.parser
+        !old.hasSameValueConfiguration(as: new)
             || old.requestTimeout != new.requestTimeout
             || old.refreshInterval != new.refreshInterval
     }

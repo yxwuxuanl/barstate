@@ -3,6 +3,8 @@ import SwiftUI
 
 struct EditorRequestConfiguration: Equatable {
     let sourceKind: MonitorSourceKind
+    let preset: DataSourcePreset?
+    let prometheusTemplate: PrometheusTemplate?
     let urlString: String
     let promQL: String
     let authentication: HTTPAuthentication
@@ -11,6 +13,8 @@ struct EditorRequestConfiguration: Equatable {
 
     init(monitor: Monitor) {
         sourceKind = monitor.sourceKind
+        preset = monitor.sourceKind == .httpAPI ? monitor.preset : nil
+        prometheusTemplate = monitor.sourceKind == .prometheus ? monitor.prometheusTemplate : nil
         urlString = monitor.sourceKind == .codexQuota ? "" : monitor.urlString
         promQL = monitor.sourceKind == .prometheus ? monitor.promQL : ""
         authentication = monitor.sourceKind == .codexQuota ? .init() : monitor.authentication
@@ -24,7 +28,7 @@ struct EditorTestConfiguration: Equatable {
 
     init(monitor: Monitor) {
         request = EditorRequestConfiguration(monitor: monitor)
-        parser = monitor.sourceKind == .httpAPI ? monitor.parser : nil
+        parser = monitor.sourceKind == .httpAPI && monitor.preset == nil ? monitor.parser : nil
     }
 }
 struct EditorRequestFailure: Equatable {
@@ -67,12 +71,15 @@ enum EditorFormLayoutMetrics {
 struct EditorEditableConfiguration: Equatable {
     let name: String
     let sourceKind: MonitorSourceKind
+    let preset: DataSourcePreset?
+    let prometheusTemplate: PrometheusTemplate?
     let urlString: String
     let promQL: String
     let authentication: HTTPAuthentication
     let requestHeaders: [RequestHeader]
     let parser: ParserConfiguration
     let displayTemplate: String
+    let alertRule: MonitorAlertRule
     let statusIndicator: StatusIndicatorConfiguration
     let refreshInterval: TimeInterval
     let refreshIntervalUnit: RefreshIntervalUnit
@@ -81,12 +88,15 @@ struct EditorEditableConfiguration: Equatable {
     init(monitor: Monitor) {
         name = monitor.name
         sourceKind = monitor.sourceKind
+        preset = monitor.preset
+        prometheusTemplate = monitor.prometheusTemplate
         urlString = monitor.urlString
         promQL = monitor.promQL
         authentication = monitor.authentication
         requestHeaders = monitor.requestHeaders
         parser = monitor.parser
         displayTemplate = monitor.displayTemplate
+        alertRule = monitor.alertRule
         statusIndicator = monitor.statusIndicator
         refreshInterval = monitor.refreshInterval
         refreshIntervalUnit = monitor.refreshIntervalUnit

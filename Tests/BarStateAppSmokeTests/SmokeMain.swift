@@ -430,8 +430,8 @@ struct BarStateAppSmokeTests {
         let engine = PollingEngine(
             valueFetcher: fetcher,
             maximumConcurrentRequests: 2,
-            resultHandler: { id, outcome, _ in
-                await recorder.append(id: id, outcome: outcome)
+            resultHandler: { monitor, outcome, _ in
+                await recorder.append(id: monitor.id, outcome: outcome)
             }
         )
         let changedID = UUID()

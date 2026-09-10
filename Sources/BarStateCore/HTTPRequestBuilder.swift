@@ -7,6 +7,9 @@ public enum HTTPRequestBuilder {
         at date: Date = Date(),
         codexAuthFileURL: URL? = nil
     ) throws -> URLRequest {
+        if monitor.sourceKind == .httpAPI, let preset = monitor.preset {
+            return try preset.makeRequest(timeout: timeoutInterval ?? monitor.requestTimeout)
+        }
         if monitor.sourceKind == .codexQuota {
             return try makeCodexQuotaRequest(
                 for: monitor,
@@ -29,7 +32,8 @@ public enum HTTPRequestBuilder {
         }
 
         if monitor.sourceKind == .prometheus {
-            let query = monitor.promQL.trimmingCharacters(in: .whitespacesAndNewlines)
+            let query = try monitor.prometheusTemplate?.query()
+                ?? monitor.promQL.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else {
                 throw MonitoringError.prometheusQueryRequired
             }

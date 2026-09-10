@@ -3,121 +3,57 @@ import Foundation
 import SwiftUI
 
 struct MonitorRuntimeStatusView: View {
-    let runtime: MonitorRuntimeState
-    let isRefreshing: Bool
+    let health: MonitorHealth
     let nextRefreshAt: Date?
-    let isEnabled: Bool
     let isSavedMonitor: Bool
+    @State private var showsDetails = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: iconName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .frame(width: 24, height: 24)
-                .background(statusColor.opacity(0.12), in: Circle())
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .help(detail)
+        DisclosureGroup(isExpanded: $showsDetails) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(isSavedMonitor ? health.detail : L10n.string("runtime.unsaved_detail"))
+                    .textSelection(.enabled)
+                if isSavedMonitor, health.phase != .disabled, let nextRefreshAt {
+                    Text(L10n.format("runtime.next_refresh", nextRefreshAt.formatted(
+                        Date.FormatStyle(date: .abbreviated, time: .shortened).locale(L10n.locale)
+                    )))
+                }
             }
-
-            Spacer(minLength: 12)
+            .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 5)
+        } label: {
+            Label(isSavedMonitor ? health.title : L10n.string("runtime.unsaved"),
+                  systemImage: isSavedMonitor ? health.symbol : "square.and.arrow.down")
+                .font(.subheadline).foregroundStyle(statusColor)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(.separator.opacity(0.65), lineWidth: 1)
+        .onChange(of: health.phase) {
+            if health.phase == .failed || health.phase == .retrying || health.phase == .offline {
+                showsDetails = true
+            }
         }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var title: String {
-        if !isSavedMonitor { return L10n.string("runtime.unsaved") }
-        if !isEnabled { return L10n.string("runtime.disabled") }
-        if isRefreshing { return L10n.string("runtime.refreshing") }
-        if runtime.consecutiveFailures >= 3 {
-            return L10n.string("runtime.repeated_failure")
-        }
-        if runtime.consecutiveFailures > 0 {
-            return L10n.format(
-                "runtime.recent_failure",
-                Int64(runtime.consecutiveFailures)
-            )
-        }
-        if runtime.lastSuccessAt != nil { return L10n.string("runtime.healthy") }
-        return L10n.string("runtime.awaiting_first_update")
-    }
-
-    private var detail: String {
-        if !isSavedMonitor {
-            return L10n.string("runtime.unsaved_detail")
-        }
-        if !isEnabled {
-            return L10n.string("runtime.disabled_detail")
-        }
-
-        var parts: [String] = []
-        if let error = runtime.lastError {
-            parts.append(error.localizedDescription)
-        }
-        if runtime.lastError != nil, let lastAttemptAt = runtime.lastAttemptAt {
-            parts.append(L10n.format("runtime.last_attempt", dateText(lastAttemptAt)))
-        } else if let lastSuccessAt = runtime.lastSuccessAt {
-            parts.append(L10n.format("runtime.last_success", dateText(lastSuccessAt)))
-        }
-        if !isRefreshing, let nextRefreshAt {
-            parts.append(L10n.format("runtime.next_refresh", dateText(nextRefreshAt)))
-        }
-        if parts.isEmpty {
-            return L10n.string("runtime.enabled_detail")
-        }
-        return parts.joined(separator: L10n.string("list.detail_separator"))
-    }
-
-    private var iconName: String {
-        if !isSavedMonitor { return "square.and.arrow.down" }
-        if !isEnabled { return "pause.fill" }
-        if isRefreshing { return "arrow.triangle.2.circlepath" }
-        if runtime.consecutiveFailures > 0 { return "exclamationmark.triangle.fill" }
-        if runtime.lastSuccessAt != nil { return "checkmark.circle.fill" }
-        return "clock.fill"
     }
 
     private var statusColor: Color {
-        if !isSavedMonitor || !isEnabled { return .secondary }
-        if isRefreshing { return .accentColor }
-        if runtime.consecutiveFailures >= 3 { return .red }
-        if runtime.consecutiveFailures > 0 { return .orange }
-        if runtime.lastSuccessAt != nil { return .green }
-        return .secondary
-    }
-
-    private func dateText(_ date: Date) -> String {
-        date.formatted(
-            Date.FormatStyle(date: .abbreviated, time: .shortened)
-                .locale(L10n.locale)
-        )
+        guard isSavedMonitor else { return .secondary }
+        switch health.phase {
+        case .failed: return .red
+        case .retrying, .stale, .offline: return .orange
+        default: return .secondary
+        }
     }
 }
+
 struct ResponsePreviewView: View {
     let response: HTTPResponseSnapshot?
     let isLoading: Bool
     let isConfigurationStale: Bool
     let sourceLabel: String
     let latestRequestFailure: EditorRequestFailure?
+    var detailsExpansion: Binding<Bool>? = nil
     @State private var showsHTTPDetails = false
 
-    private let panelBackground = Color(red: 0.12, green: 0.13, blue: 0.17)
+    private let panelBackground = Color(nsColor: .textBackgroundColor)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -129,7 +65,7 @@ struct ResponsePreviewView: View {
             ScrollView([.horizontal, .vertical]) {
                 Text(bodyText)
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(response == nil ? 0.55 : 0.92))
+                    .foregroundStyle(Color.primary.opacity(response == nil ? 0.65 : 1))
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -138,7 +74,7 @@ struct ResponsePreviewView: View {
             .frame(minHeight: 132, maxHeight: 210)
             .background(panelBackground)
 
-            DisclosureGroup(isExpanded: $showsHTTPDetails) {
+            DisclosureGroup(isExpanded: detailsExpansion ?? $showsHTTPDetails) {
                 ScrollView(.horizontal) {
                     Text(
                         response?.fullHTTPDetails

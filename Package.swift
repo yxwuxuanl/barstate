@@ -29,6 +29,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Network"),
+                .linkedFramework("UserNotifications"),
                 .linkedFramework("ServiceManagement")
             ]
         ),

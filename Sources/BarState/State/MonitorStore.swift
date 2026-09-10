@@ -15,7 +15,13 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var persistenceMessage: String?
     @Published private(set) var preferences: AppPreferences
     @Published private(set) var recoveryMode: PersistenceRecoveryMode?
+    @Published private(set) var now = Date()
+    @Published private(set) var isNetworkOffline = false
+    @Published var notificationPermission: NotificationPermission = .unknown
+    @Published var notificationMessage: String?
     var onConfigurationChange: (([Monitor]) -> Void)?
+    var onAlert: ((Monitor, MonitorAlertEvent) -> Void)?
+    var onRequestNotificationPermission: (() -> Void)?
 
     private let persistence: PersistenceController
     private let persistenceWriter: PersistenceWriter
@@ -38,6 +44,7 @@ final class MonitorStore: ObservableObject {
         self.preferences = initialMonitors == nil ? loadResult.state.preferences : .init()
         self.persistenceMessage = initialMonitors == nil ? loadResult.warning : nil
         self.recoveryMode = initialMonitors == nil ? loadResult.recoveryMode : nil
+        for index in monitors.indices { monitors[index].runtime.alertState.interruptSamples() }
         normalizeOrder()
     }
 
@@ -57,6 +64,30 @@ final class MonitorStore: ObservableObject {
         monitors.first { $0.id == id }
     }
 
+    func tick(at date: Date = Date()) {
+        // Time alone must not redraw every form and status item. Publish only a health transition.
+        if monitors.contains(where: {
+            MonitorHealth(monitor: $0, now: now) != MonitorHealth(monitor: $0, now: date)
+        }) { now = date }
+    }
+
+    func health(for monitor: Monitor) -> MonitorHealth {
+        MonitorHealth(monitor: monitor, now: now,
+                      isRefreshing: pollingStatus.refreshingIDs.contains(monitor.id),
+                      isNetworkOffline: isNetworkOffline)
+    }
+
+    func setNetworkOffline(_ offline: Bool) {
+        guard offline != isNetworkOffline else { return }
+        isNetworkOffline = offline
+        if offline {
+            for index in monitors.indices where !monitors[index].usesLoopbackConnection {
+                monitors[index].runtime.alertState.interruptSamples()
+            }
+        }
+        tick()
+    }
+
     func add(_ monitor: Monitor) {
         guard !isPersistenceWriteProtected else { return }
         guard !monitors.contains(where: { $0.id == monitor.id }) else { return }
@@ -72,8 +103,22 @@ final class MonitorStore: ObservableObject {
         guard !isPersistenceWriteProtected else { return }
         guard let index = monitors.firstIndex(where: { $0.id == monitor.id }) else { return }
         var normalized = monitor
+        // Ordering can change while this monitor's editor still holds an older draft.
+        normalized.order = monitors[index].order
         normalized.refreshInterval = Monitor.normalizedRefreshInterval(monitor.refreshInterval)
         normalized.requestTimeout = Monitor.normalizedRequestTimeout(monitor.requestTimeout)
+        if !monitors[index].hasSameValueConfiguration(as: normalized) {
+            var alertState = monitors[index].runtime.alertState
+            alertState.reset()
+            normalized.runtime = .init()
+            normalized.runtime.alertState = alertState
+        } else {
+            normalized.runtime = monitors[index].runtime
+            if monitors[index].alertRule != normalized.alertRule
+                || monitors[index].isEnabled != normalized.isEnabled {
+                normalized.runtime.alertState.reset()
+            }
+        }
         monitors[index] = normalized
         normalizeOrder()
         configurationsDidChange()
@@ -90,6 +135,7 @@ final class MonitorStore: ObservableObject {
             || monitors[index].showsInMenuBar != showsInMenuBar
         else { return }
 
+        if monitors[index].isEnabled != isEnabled { monitors[index].runtime.alertState.reset() }
         monitors[index].isEnabled = isEnabled
         monitors[index].showsInMenuBar = showsInMenuBar
         configurationsDidChange()
@@ -110,9 +156,7 @@ final class MonitorStore: ObservableObject {
         guard source != destination else { return }
         let monitor = ordered.remove(at: source)
         ordered.insert(monitor, at: destination)
-        monitors = ordered
-        normalizeOrder()
-        configurationsDidChange()
+        applyMonitorOrder(ordered)
     }
 
     func move(fromOffsets offsets: IndexSet, toOffset destination: Int) {
@@ -128,9 +172,7 @@ final class MonitorStore: ObservableObject {
             ordered.count
         )
         ordered.insert(contentsOf: moving, at: insertionIndex)
-        monitors = ordered
-        normalizeOrder()
-        configurationsDidChange()
+        applyMonitorOrder(ordered)
     }
 
     func updatePreferences(_ preferences: AppPreferences) {
@@ -142,6 +184,67 @@ final class MonitorStore: ObservableObject {
         guard normalized != self.preferences else { return }
         self.preferences = normalized
         saveImmediately()
+    }
+
+    func record(
+        requestedMonitor: Monitor,
+        result: Result<Double, MonitoringError>,
+        at date: Date,
+        response: HTTPResponseSnapshot?,
+        requestDuration: TimeInterval? = nil
+    ) {
+        // Recheck on the main actor: settings may change while a result is delivered.
+        guard !isPersistenceWriteProtected, let current = monitor(id: requestedMonitor.id),
+              current.isEnabled,
+              current.hasSameValueConfiguration(as: requestedMonitor)
+        else { return }
+        record(monitorID: current.id, result: result, at: date, response: response,
+               requestDuration: requestDuration)
+        guard let index = monitors.firstIndex(where: { $0.id == current.id }) else { return }
+        // Offline remote samples are still recorded for diagnostics, but never open incidents.
+        guard !isNetworkOffline || current.usesLoopbackConnection else {
+            monitors[index].runtime.alertState.interruptSamples()
+            return
+        }
+        // A rule changed during this request must start with a new request after the edit.
+        guard current.alertRule == requestedMonitor.alertRule else { return }
+        let event = monitors[index].runtime.alertState.evaluate(
+            result, rule: current.alertRule, at: date,
+            allowsNotification: notificationPermission == .authorized
+        )
+        if let event {
+            persistAndDeliver(event, monitor: monitors[index])
+        } else { scheduleSave() }
+    }
+
+    private func persistAndDeliver(_ event: MonitorAlertEvent, monitor: Monitor) {
+        saveTask?.cancel()
+        persistenceRevision += 1
+        let revision = persistenceRevision
+        let snapshot = storedStateSnapshot
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Persist deduplication before submitting to Notification Center.
+            if self.persistsChanges {
+                do { _ = try await self.persistenceWriter.save(state: snapshot, revision: revision) }
+                catch {
+                    self.persistenceMessage = L10n.format("persistence.save_failed", error.localizedDescription)
+                    return
+                }
+            }
+            guard self.canDeliver(event, for: monitor) else { return }
+            self.onAlert?(monitor, event)
+        }
+    }
+
+    func canDeliver(_ event: MonitorAlertEvent, for requested: Monitor) -> Bool {
+        guard !isPersistenceWriteProtected, notificationPermission == .authorized,
+              let current = monitor(id: requested.id), current.isEnabled,
+              current.alertRule.isEnabled, current.alertRule == requested.alertRule,
+              current.hasSameValueConfiguration(as: requested),
+              current.runtime.alertState.contains(event),
+              !isNetworkOffline || current.usesLoopbackConnection else { return false }
+        return true
     }
 
     func record(
@@ -169,6 +272,7 @@ final class MonitorStore: ObservableObject {
                 requestDuration: requestDuration
             )
         }
+        tick(at: date)
         scheduleSave()
     }
 
@@ -276,6 +380,15 @@ final class MonitorStore: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.refreshFeedback = nil
         }
+    }
+
+    private func applyMonitorOrder(_ ordered: [Monitor]) {
+        monitors = ordered.enumerated().map { index, monitor in
+            var updated = monitor
+            updated.order = index
+            return updated
+        }
+        configurationsDidChange()
     }
 
     private func normalizeOrder() {

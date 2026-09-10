@@ -4,6 +4,41 @@ import Testing
 @testable import BarState
 
 struct PollingEngineTests {
+    @Test(arguments: ["kind", "username", "password"])
+    func authenticationChangeStartsNewRequestAndRejectsOldResult(field: String) async {
+        let fetcher = ControlledValueFetcher()
+        let results = ResultRecorder()
+        let engine = PollingEngine(valueFetcher: fetcher) { _, outcome, _ in
+            await results.append(outcome)
+        }
+        var monitor = Monitor(
+            name: "Authentication",
+            urlString: "https://example.com/value",
+            authentication: HTTPAuthentication(kind: .basic, username: "old-user", password: "old-secret")
+        )
+        await engine.update(monitors: [monitor])
+        let firstStarted = await waitUntil { await fetcher.requests.count == 1 }
+        #expect(firstStarted)
+
+        switch field {
+        case "kind": monitor.authentication.kind = .none
+        case "username": monitor.authentication.username = "new-user"
+        default: monitor.authentication.password = "new-secret"
+        }
+        await engine.update(monitors: [monitor])
+        let replacementStarted = await waitUntil { await fetcher.requests.count == 2 }
+        #expect(replacementStarted)
+        let requests = await fetcher.requests
+        #expect(requests.last?.authentication == monitor.authentication)
+
+        // This fetcher deliberately completes even when cancelled.
+        await fetcher.complete(index: 0, value: 1)
+        await fetcher.complete(index: 1, value: 2)
+        let receivedReplacement = await waitUntil { await results.values == [2] }
+        #expect(receivedReplacement)
+        await engine.stop()
+    }
+
     @Test func staleRequestCannotOverwriteChangedConfiguration() async {
         let fetcher = TestValueFetcher(delays: ["old": .milliseconds(250), "new": .milliseconds(20)])
         let results = ResultRecorder()
@@ -122,8 +157,8 @@ struct PollingEngineTests {
         let second = Monitor(name: "second", urlString: "https://example.com/second", order: 1)
         let engine = PollingEngine(
             valueFetcher: fetcher,
-            resultHandler: { id, outcome, _ in
-                await results.append(id: id, outcome: outcome)
+            resultHandler: { monitor, outcome, _ in
+                await results.append(id: monitor.id, outcome: outcome)
             }
         )
 
@@ -133,6 +168,23 @@ struct PollingEngineTests {
         let received = await waitUntil { await results.ids == [second.id] }
         #expect(received)
         await engine.stop()
+    }
+}
+
+private actor ControlledValueFetcher: MonitorValueFetching {
+    private(set) var requests: [Monitor] = []
+    private var pending: [Int: CheckedContinuation<FetchOutcome, Never>] = [:]
+
+    func fetchValue(for monitor: Monitor) async -> FetchOutcome {
+        let index = requests.count
+        requests.append(monitor)
+        return await withCheckedContinuation { pending[index] = $0 }
+    }
+
+    func complete(index: Int, value: Double) {
+        pending.removeValue(forKey: index)?.resume(returning: FetchOutcome(
+            response: nil, requestedAt: Date(), result: .success(value)
+        ))
     }
 }
 

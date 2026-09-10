@@ -30,11 +30,21 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
     case prometheusMultipleSeries(Int)
     case prometheusUnsupportedResultType(String)
     case prometheusMissingValue
+    case prometheusTargetRequired
+    case prometheusMountRequired
     case codexAuthFileNotFound
     case codexAuthFileUnreadable
     case codexAccessTokenMissing
     case codexQuotaMissing
     case codexQuotaInvalid
+    case presetKeyRequired
+    case presetKeyInvalid
+    case presetMetricUnsupported
+    case presetCurrencyUnavailable
+    case presetBudgetUnset
+    case presetServiceRejected
+    case presetValueMissing
+    case presetInvalidData
     case script(String)
     case scriptRuntimeUnavailable
     case scriptUnknownException
@@ -61,6 +71,9 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
             L10n.string("error.authorization_header_conflict")
         case .invalidHTTPResponse: L10n.string("error.invalid_response")
         case .requestTimedOut: L10n.string("error.request_timed_out")
+        case .httpStatus(401): L10n.string("error.http_unauthorized")
+        case .httpStatus(403): L10n.string("error.http_forbidden")
+        case .httpStatus(429): L10n.string("error.http_rate_limited")
         case let .httpStatus(code): L10n.format("error.http_status", Int64(code))
         case .responseTooLarge: L10n.string("error.response_too_large")
         case .unsupportedResponseBody: L10n.string("error.unsupported_body")
@@ -92,6 +105,8 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
             L10n.format("error.prometheus_unsupported_result_type", resultType)
         case .prometheusMissingValue:
             L10n.string("error.prometheus_missing_value")
+        case .prometheusTargetRequired: L10n.string("error.prometheus_target_required")
+        case .prometheusMountRequired: L10n.string("error.prometheus_mount_required")
         case .codexAuthFileNotFound:
             L10n.string("error.codex_auth_file_not_found")
         case .codexAuthFileUnreadable:
@@ -102,6 +117,14 @@ public enum MonitoringError: Error, LocalizedError, Codable, Equatable, Sendable
             L10n.string("error.codex_quota_missing")
         case .codexQuotaInvalid:
             L10n.string("error.codex_quota_invalid")
+        case .presetKeyRequired: L10n.string("error.preset_key_required")
+        case .presetKeyInvalid: L10n.string("error.preset_key_invalid")
+        case .presetMetricUnsupported: L10n.string("error.preset_metric_unsupported")
+        case .presetCurrencyUnavailable: L10n.string("error.preset_currency_unavailable")
+        case .presetBudgetUnset: L10n.string("error.preset_budget_unset")
+        case .presetServiceRejected: L10n.string("error.preset_service_rejected")
+        case .presetValueMissing: L10n.string("error.preset_value_missing")
+        case .presetInvalidData: L10n.string("error.preset_invalid_data")
         case let .script(message): L10n.format("error.script", message)
         case .scriptRuntimeUnavailable:
             L10n.format("error.script", L10n.string("error.script_runtime_unavailable"))

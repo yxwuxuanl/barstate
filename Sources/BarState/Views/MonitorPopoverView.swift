@@ -93,6 +93,7 @@ struct MonitorPopoverView: View {
                         MonitorPopoverRow(
                             monitor: monitor,
                             isRefreshing: store.pollingStatus.refreshingIDs.contains(monitor.id),
+                            health: store.health(for: monitor),
                             onOpenSettings: { onOpenSettings(monitor.id) },
                             onRefresh: { onRefreshMonitor(monitor.id) }
                         )
@@ -188,6 +189,7 @@ struct MonitorPopoverView: View {
 private struct MonitorPopoverRow: View {
     let monitor: Monitor
     let isRefreshing: Bool
+    let health: MonitorHealth
     let onOpenSettings: () -> Void
     let onRefresh: () -> Void
 
@@ -278,54 +280,18 @@ private struct MonitorPopoverRow: View {
         .onHover { isHovering = $0 }
     }
 
-    private var statusPrimaryText: String {
-        if !monitor.isEnabled {
-            return L10n.string("popover.disabled")
-        }
-        if isRefreshing {
-            return L10n.string("popover.refreshing")
-        }
-        if monitor.runtime.consecutiveFailures == 0 {
-            guard let lastSuccessAt = monitor.runtime.lastSuccessAt else {
-                return L10n.string("popover.awaiting_first_refresh")
-            }
-            return successText(for: lastSuccessAt)
-        }
-
-        let error = monitor.runtime.lastError?.localizedDescription
-            ?? L10n.string("popover.unknown_error")
-        if monitor.runtime.consecutiveFailures < failureLimit {
-            return L10n.format(
-                "popover.update_failed",
-                Int64(monitor.runtime.consecutiveFailures),
-                Int64(failureLimit),
-                error
-            )
-        }
-        return L10n.format("popover.repeated_failure", error)
-    }
+    private var statusPrimaryText: String { health.title }
 
     private var statusSecondaryText: String? {
-        if !monitor.isEnabled {
-            guard let lastSuccessAt = monitor.runtime.lastSuccessAt else { return nil }
-            return L10n.format(
-                "popover.last_success",
-                relativeTimeText(for: lastSuccessAt)
-            )
-        }
-        if isRefreshing || monitor.runtime.consecutiveFailures > 0 {
-            guard let lastAttemptAt = monitor.runtime.lastAttemptAt else { return nil }
-            return L10n.format(
-                "popover.last_attempt",
-                relativeTimeText(for: lastAttemptAt)
-            )
-        }
-        return nil
+        if monitor.runtime.alertState.isActive { return L10n.string("alert.active") }
+        guard let lastSuccessAt = health.lastSuccessAt else { return nil }
+        return L10n.format("runtime.last_success", lastSuccessAt.formatted(
+            Date.FormatStyle(date: .omitted, time: .standard).locale(L10n.locale)
+        ))
     }
 
     private var showsStaleValue: Bool {
-        guard monitor.runtime.lastValue != nil, monitor.runtime.displayValue != nil else { return false }
-        return !monitor.isEnabled || monitor.runtime.consecutiveFailures > 0
+        health.showsPreviousValue && monitor.runtime.displayValue != nil
     }
 
     private var valueColor: Color {
@@ -333,28 +299,14 @@ private struct MonitorPopoverRow: View {
     }
 
     private var statusColor: Color {
-        if !monitor.isEnabled {
-            return .secondary
+        switch health.phase {
+        case .failed: .red
+        case .retrying, .stale, .offline: .orange
+        default: .secondary
         }
-        if isRefreshing {
-            return .secondary
-        }
-        if monitor.runtime.consecutiveFailures >= failureLimit {
-            return .red
-        }
-        if monitor.runtime.consecutiveFailures > 0 {
-            return .orange
-        }
-        return .secondary
     }
 
-    private var failureLimit: Int { 3 }
-
-    private var statusHelpText: String {
-        [statusPrimaryText, statusSecondaryText]
-            .compactMap { $0 }
-            .joined(separator: L10n.string("list.inline_separator"))
-    }
+    private var statusHelpText: String { health.title + " — " + health.detail }
 
     private var accessibilityLabel: String {
         var components = [monitor.name, monitor.displayText, statusPrimaryText]
@@ -370,18 +322,4 @@ private struct MonitorPopoverRow: View {
         return components.joined(separator: L10n.string("list.accessibility_separator"))
     }
 
-    private func successText(for date: Date) -> String {
-        if Date().timeIntervalSince(date) < 60 {
-            return L10n.string("popover.updated_just_now")
-        }
-        return L10n.format("popover.updated_relative", relativeTimeText(for: date))
-    }
-
-    private func relativeTimeText(for date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
-        formatter.unitsStyle = .full
-        formatter.locale = L10n.locale
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
 }

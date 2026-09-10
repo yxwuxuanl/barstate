@@ -56,19 +56,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             )
         )
 
-        monitorsCancellable = Publishers.CombineLatest3(
-            store.$monitors,
-            store.$preferences,
-            store.$persistenceMessage
-        ).sink { [weak self] monitors, preferences, persistenceMessage in
+        monitorsCancellable = store.objectWillChange.sink { [weak self] in
             Task { @MainActor in
-                self?.synchronize(
-                    with: monitors,
-                    preferences: preferences,
-                    persistenceMessage: persistenceMessage
-                )
+                guard let self else { return }
+                self.synchronize(with: self.store.monitors, preferences: self.store.preferences,
+                                 persistenceMessage: self.store.persistenceMessage)
             }
         }
+        synchronize(with: store.monitors, preferences: store.preferences,
+                    persistenceMessage: store.persistenceMessage)
     }
 
     func stop() {
@@ -103,7 +99,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             removeIndividualEntries()
             let summaryEntry = fallbackEntry ?? makeFallbackEntry()
             fallbackEntry = summaryEntry
-            let title = StatusBarTitleFormatter.compactTitle(for: visibleMonitors)
+            let attentionCount = visibleMonitors.filter {
+                !store.health(for: $0).menuBarMarker.isEmpty && store.health(for: $0).phase != .refreshing
+            }.count
+            let title = attentionCount > 0 ? "BarState · \(attentionCount)!" : StatusBarTitleFormatter.compactTitle(for: visibleMonitors)
             configure(
                 summaryEntry.item.button,
                 title: title,
@@ -127,8 +126,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         for monitor in visibleMonitors {
-            let title = StatusBarTitleFormatter.individualTitle(
-                for: monitor,
+            let title = StatusBarTitleFormatter.truncated(
+                store.health(for: monitor).menuBarMarker + monitor.menuBarTitle,
                 maximumCharacters: preferences.menuBarMaximumCharacters
             )
             if let entry = entries[monitor.id] {
@@ -137,7 +136,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                     title: title,
                     indicatorAppearance: monitor.statusIndicatorAppearance
                 )
-                entry.item.button?.toolTip = monitor.name
+                entry.item.button?.toolTip = monitorTooltip(for: monitor)
                 entry.item.button?.setAccessibilityLabel(
                     monitorAccessibilityLabel(for: monitor)
                 )
@@ -168,7 +167,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             title: title,
             indicatorAppearance: monitor.statusIndicatorAppearance
         )
-        item.button?.toolTip = monitor.name
+        item.button?.toolTip = monitorTooltip(for: monitor)
         item.button?.setAccessibilityLabel(
             monitorAccessibilityLabel(for: monitor)
         )
@@ -218,44 +217,25 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func compactTooltip(for monitors: [Monitor]) -> String {
         guard !monitors.isEmpty else { return L10n.string("statusbar.open_barstate") }
-        let failedCount = monitors.filter { $0.runtime.consecutiveFailures > 0 }.count
-        return L10n.format(
-            "statusbar.compact_tooltip",
-            Int64(monitors.count),
-            Int64(failedCount)
-        )
+        return monitors.map { monitorTooltip(for: $0) }.joined(separator: "\n")
     }
 
     private func compactAccessibilityLabel(for monitors: [Monitor]) -> String {
         guard !monitors.isEmpty else { return "BarState" }
-        let failedCount = monitors.filter { $0.runtime.consecutiveFailures > 0 }.count
-        let baseLabel = L10n.format(
-            "statusbar.compact_accessibility",
-            Int64(monitors.count),
-            Int64(failedCount)
-        )
-        guard let appearance = StatusBarTitleFormatter.compactIndicatorAppearance(
-            for: monitors
-        ) else {
-            return baseLabel
-        }
-        return [
-            baseLabel,
-            appearance.accessibilityText
-        ].joined(separator: L10n.string("list.accessibility_separator"))
+        return monitors.map { monitorAccessibilityLabel(for: $0) }
+            .joined(separator: L10n.string("list.accessibility_separator"))
+    }
+
+    private func monitorTooltip(for monitor: Monitor) -> String {
+        let health = store.health(for: monitor)
+        return "\(monitor.name) · \(health.title)\n\(health.detail)"
     }
 
     private func monitorAccessibilityLabel(for monitor: Monitor) -> String {
-        let baseLabel = L10n.format(
-            "statusbar.monitor_accessibility",
-            monitor.name,
-            monitor.menuBarTitle
-        )
-        guard let appearance = monitor.statusIndicatorAppearance else { return baseLabel }
-        return [
-            baseLabel,
-            appearance.accessibilityText
-        ].joined(separator: L10n.string("list.accessibility_separator"))
+        var parts = [monitor.name, monitor.menuBarTitle, store.health(for: monitor).title,
+                     store.health(for: monitor).detail]
+        if let appearance = monitor.statusIndicatorAppearance { parts.append(appearance.accessibilityText) }
+        return parts.joined(separator: L10n.string("list.accessibility_separator"))
     }
 
     private func configure(

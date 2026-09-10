@@ -2,6 +2,20 @@
 
 All notable changes to BarState are documented here.
 
+## [1.0.0] - 2026-09-10
+
+Native Settings, service presets, and daily monitoring improvements. OpenRouter / SiliconFlow real-account checks, real login/wake/network recovery, and VoiceOver navigation were explicitly deferred for this release. See the [validation record](docs/ITERATION_PROGRESS.md) for evidence and unverified scenarios.
+
+- Reorganized Settings into a native sidebar, shared Connection & Parsing / Menu Bar / Alerts draft, independent General settings, and a fixed save area with error routing.
+- Added a source catalog and DeepSeek, OpenRouter, and SiliconFlow China presets with explicit metrics, currency handling, and limited response snapshots.
+- Added CPU, memory, disk, and target scrape-status Prometheus templates with explicit target selection.
+- Unified freshness, previous-value, failure, and offline status across monitor surfaces.
+- Removed the transient menu bar refresh icon to reduce flicker during frequent or slow requests.
+- Added opt-in local alert rules, consecutive-sample confirmation, persisted incident deduplication, and optional recovery notifications.
+- Isolated results after authentication or metric changes and shared identical in-flight requests without caching completed responses.
+- Fixed sidebar move and drag ordering being undone by old order numbers; saving an already-open draft preserves the current order.
+- Added bilingual development guides, repeatable local toolchain validation, and architecture-specific build options.
+
 ## [0.5.0] - 2026-08-09
 
 - Added a Codex Quota data source that displays the remaining primary-window quota.
@@ -41,6 +55,7 @@ All notable changes to BarState are documented here.
 - Added numeric response extraction with JSONPath or JavaScript.
 - Added configurable menu bar value display and refresh intervals.
 
+[1.0.0]: https://github.com/yxwuxuanl/barstate/releases/tag/v1.0.0
 [0.5.0]: https://github.com/yxwuxuanl/barstate/releases/tag/v0.5.0
 [0.4.0]: https://github.com/yxwuxuanl/barstate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/yxwuxuanl/barstate/releases/tag/v0.3.0

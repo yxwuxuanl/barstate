@@ -69,6 +69,7 @@ actor APIClient: MonitorValueFetching {
     private let session: URLSession
     private let scriptService: ScriptServiceClient
     private let maximumResponseSize = 2 * 1_024 * 1_024
+    private let inFlightRequests = InFlightRequests<HTTPRequestIdentity, HTTPPayload>()
 
     init(scriptService: ScriptServiceClient = ScriptServiceClient()) {
         let configuration = URLSessionConfiguration.ephemeral
@@ -115,18 +116,27 @@ actor APIClient: MonitorValueFetching {
         do {
             let payload = try await fetchPayloadBeforeDeadline(for: monitor)
             let requestDuration = Self.elapsedTime(since: startedAt)
-            let snapshotPayload = monitor.sourceKind == .codexQuota
-                ? HTTPPayload(
-                    data: CodexQuotaResponseParser.quotaOnlySnapshotData(from: payload.data),
-                    response: payload.response,
-                    protocolName: payload.protocolName
-                )
-                : payload
-            let response = Self.makeSnapshot(
+            let snapshotData: Data
+            if monitor.sourceKind == .codexQuota {
+                snapshotData = CodexQuotaResponseParser.quotaOnlySnapshotData(from: payload.data)
+            } else if monitor.sourceKind == .httpAPI, let preset = monitor.preset {
+                snapshotData = preset.sanitizedSnapshotData(from: payload.data)
+            } else {
+                snapshotData = payload.data
+            }
+            let snapshotPayload = HTTPPayload(
+                data: snapshotData, response: payload.response, protocolName: payload.protocolName
+            )
+            var response = Self.makeSnapshot(
                 from: snapshotPayload,
                 requestedAt: requestedAt,
                 requestDuration: requestDuration
             )
+            if monitor.sourceKind == .httpAPI, monitor.preset != nil {
+                response.headers = response.headers.filter {
+                    ["content-type", "retry-after", "date"].contains($0.name.lowercased())
+                }
+            }
             let statusCode = payload.response.statusCode
             let statusError: MonitoringError? = if (200...299).contains(statusCode) {
                 nil
@@ -224,6 +234,10 @@ actor APIClient: MonitorValueFetching {
                 value = try PrometheusResponseParser.number(from: response.bodyData)
 
             case .httpAPI:
+                if let preset = monitor.preset {
+                    value = try preset.number(from: response.bodyData)
+                    break
+                }
                 switch monitor.parser.kind {
                 case .jsonPath:
                     guard response.bodyKind == .json else {
@@ -262,6 +276,12 @@ actor APIClient: MonitorValueFetching {
 
     private func fetchPayload(for monitor: Monitor) async throws -> HTTPPayload {
         let request = try HTTPRequestBuilder.makeRequest(for: monitor)
+        return try await inFlightRequests.value(for: HTTPRequestIdentity(request)) {
+            try await self.performRequest(request)
+        }
+    }
+
+    private func performRequest(_ request: URLRequest) async throws -> HTTPPayload {
         let metricsCollector = TaskMetricsCollector()
 
         do {

@@ -8,6 +8,8 @@ struct SettingsView: View {
     @ObservedObject var loginItemManager: LoginItemManager
     @ObservedObject var session: SettingsSessionState
     @State private var selectedID: UUID?
+    @State private var showsGeneralSettings = false
+    @State private var showsSourceCatalog = false
     @State private var pendingDraft: Monitor?
     @State private var pendingDeletion: Monitor?
     @State private var pendingNavigation: PendingNavigation?
@@ -19,6 +21,8 @@ struct SettingsView: View {
 
     private enum PendingNavigation {
         case select(UUID?)
+        case general
+        case add
         case create(MonitorCreationKind)
         case clone(UUID)
     }
@@ -28,6 +32,7 @@ struct SettingsView: View {
         case prometheus
         case codexQuota
         case jsonTemplate
+        case source(MonitorSourceChoice)
     }
 
     var body: some View {
@@ -45,14 +50,30 @@ struct SettingsView: View {
 
             HSplitView {
                 sidebar
-                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 290)
+                    .frame(minWidth: 210, idealWidth: 220, maxWidth: 270)
                 detail
                     .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 860, minHeight: 620)
+        .sheet(isPresented: $showsSourceCatalog) {
+            SourceCatalogView(
+                onSelect: { choice in
+                    showsSourceCatalog = false
+                    requestNavigation(.create(.source(choice)))
+                },
+                onExample: {
+                    showsSourceCatalog = false
+                    requestNavigation(.create(.jsonTemplate))
+                },
+                onCancel: { showsSourceCatalog = false }
+            )
+        }
         .onAppear {
             loginItemManager.refreshStatus()
+            if ProcessInfo.processInfo.arguments.contains("--preview-general") {
+                showsGeneralSettings = true
+            }
             if ProcessInfo.processInfo.arguments.contains("--preview-new-monitor") {
                 applyNavigation(.create(.httpAPI))
                 return
@@ -137,28 +158,14 @@ struct SettingsView: View {
                 Text(L10n.string("settings.monitors"))
                     .font(.headline)
                 Spacer()
-                Button(L10n.string("settings.clone")) {
-                    guard let selectedID else { return }
-                    requestNavigation(.clone(selectedID))
+                Button {
+                    requestNavigation(.add)
+                } label: {
+                    Image(systemName: "plus")
                 }
-                .disabled(!canCloneSelected || store.isPersistenceWriteProtected)
-                .help(L10n.string("settings.clone_help"))
-
-                Menu(L10n.string("settings.add")) {
-                    Button(L10n.string("settings.add_http")) {
-                        requestNavigation(.create(.httpAPI))
-                    }
-                    Button(L10n.string("settings.add_prometheus")) {
-                        requestNavigation(.create(.prometheus))
-                    }
-                    Button(L10n.string("settings.add_codex_quota")) {
-                        requestNavigation(.create(.codexQuota))
-                    }
-                    Divider()
-                    Button(L10n.string("settings.add_template")) {
-                        requestNavigation(.create(.jsonTemplate))
-                    }
-                }
+                .buttonStyle(.borderless)
+                .help(L10n.string("settings.add"))
+                .accessibilityLabel(L10n.string("settings.add"))
                 .disabled(store.isPersistenceWriteProtected)
                 .keyboardShortcut("n", modifiers: .command)
             }
@@ -193,7 +200,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 3)
                     .tag(monitor.id)
-                    .help("\(monitor.name)\n\(sidebarSubtitle(for: monitor))")
+                    .help("\(monitor.name)\n\(sidebarSubtitle(for: monitor))\n\(store.health(for: monitor).detail)")
                     .contextMenu {
                         Button(L10n.string("settings.clone")) {
                             requestNavigation(.clone(monitor.id))
@@ -225,41 +232,44 @@ struct SettingsView: View {
             .layoutPriority(0)
 
             Divider()
-            sidebarGeneralSettings
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(2)
-            Divider()
-
-            HStack(spacing: 14) {
-                Button(L10n.string("common.delete")) {
-                    if pendingDraft?.id == selectedID {
-                        pendingDraft = nil
-                        session.setDirty(false)
-                        selectedID = store.orderedMonitors.first?.id
-                        return
-                    }
-                    guard let selectedID, let monitor = store.monitor(id: selectedID) else { return }
-                    pendingDeletion = monitor
+            HStack(spacing: 10) {
+                Button { requestNavigation(.general) } label: {
+                    Label(L10n.string("settings.general"), systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 9)
+                        .background(showsGeneralSettings ? Color.accentColor.opacity(0.13) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 6))
                 }
-                .disabled(selectedID == nil || store.isPersistenceWriteProtected)
-
-                Spacer()
-
-                Button(L10n.string("settings.move_up")) {
-                    guard let selectedID else { return }
-                    store.move(id: selectedID, offset: -1)
-                }
-                .disabled(!canMoveSelected(by: -1) || store.isPersistenceWriteProtected)
-
-                Button(L10n.string("settings.move_down")) {
-                    guard let selectedID else { return }
-                    store.move(id: selectedID, offset: 1)
-                }
-                .disabled(!canMoveSelected(by: 1) || store.isPersistenceWriteProtected)
+                .buttonStyle(.plain)
+                Menu {
+                    Button(L10n.string("settings.clone")) {
+                        if let selectedID { requestNavigation(.clone(selectedID)) }
+                    }.disabled(!canCloneSelected)
+                    Button(L10n.string("settings.move_up")) {
+                        if let selectedID { store.move(id: selectedID, offset: -1) }
+                    }.disabled(!canMoveSelected(by: -1))
+                    Button(L10n.string("settings.move_down")) {
+                        if let selectedID { store.move(id: selectedID, offset: 1) }
+                    }.disabled(!canMoveSelected(by: 1))
+                    Divider()
+                    Button(L10n.string("common.delete"), role: .destructive) {
+                        if pendingDraft?.id == selectedID {
+                            pendingDraft = nil
+                            session.setDirty(false)
+                            selectedID = store.orderedMonitors.first?.id
+                        } else if let selectedID {
+                            pendingDeletion = store.monitor(id: selectedID)
+                        }
+                    }.disabled(selectedID == nil)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(L10n.string("settings.monitor_actions"))
+                .disabled(store.isPersistenceWriteProtected || showsGeneralSettings)
             }
-            .padding(14)
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(2)
+            .padding(10)
         }
     }
 
@@ -269,8 +279,8 @@ struct SettingsView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
 
-            if monitor.sourceKind != .httpAPI {
-                Text(monitor.sourceKind.displayName)
+            if monitor.sourceKind != .httpAPI || monitor.preset != nil {
+                Text(monitor.sourceDisplayName)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 5)
@@ -302,12 +312,19 @@ struct SettingsView: View {
             }
             .padding(40)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if showsGeneralSettings {
+            generalSettings
         } else if let pendingDraft, selectedID == pendingDraft.id {
             MonitorEditorViewV2(
                 monitor: pendingDraft,
                 requiresInitialSuccessfulTest: true,
                 isRefreshing: false,
                 nextRefreshAt: nil,
+                now: store.now,
+                isNetworkOffline: store.isNetworkOffline,
+                notificationPermission: store.notificationPermission,
+                notificationMessage: store.notificationMessage,
+                onRequestNotificationPermission: { store.onRequestNotificationPermission?() },
                 onDirtyChange: { session.setDirty($0) },
                 onCancel: { session.discardChanges() }
             ) { saved in
@@ -323,6 +340,11 @@ struct SettingsView: View {
                 monitor: monitor,
                 isRefreshing: store.pollingStatus.refreshingIDs.contains(monitor.id),
                 nextRefreshAt: store.pollingStatus.nextRefreshAt[monitor.id],
+                now: store.now,
+                isNetworkOffline: store.isNetworkOffline,
+                notificationPermission: store.notificationPermission,
+                notificationMessage: store.notificationMessage,
+                onRequestNotificationPermission: { store.onRequestNotificationPermission?() },
                 onDirtyChange: { session.setDirty($0) },
                 onSwitchesChange: { isEnabled, showsInMenuBar in
                     store.updateSwitches(
@@ -361,8 +383,25 @@ struct SettingsView: View {
         }
     }
 
-    private var sidebarGeneralSettings: some View {
-        VStack(alignment: .leading, spacing: 7) {
+    private var generalSettings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(L10n.string("settings.general"))
+                .font(.title2.weight(.semibold))
+                .padding(24)
+            Divider()
+            ScrollView {
+                generalSettingsControls
+                    .padding(24)
+                    .frame(maxWidth: 660)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var generalSettingsControls: some View {
+        VStack(alignment: .leading, spacing: 20) {
             Picker(
                 L10n.string("settings.language"),
                 selection: languageSelection
@@ -429,7 +468,8 @@ struct SettingsView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
+        .padding(8)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var sidebarSelection: Binding<UUID?> {
@@ -511,28 +551,22 @@ struct SettingsView: View {
     }
 
     private func sidebarSubtitle(for monitor: Monitor) -> String {
-        guard monitor.isEnabled else { return L10n.string("status.disabled") }
-        if store.pollingStatus.refreshingIDs.contains(monitor.id) {
-            return L10n.string("status.refreshing")
+        let health = store.health(for: monitor)
+        switch health.phase {
+        case .healthy: return monitor.displayText
+        case .stale, .offline, .retrying:
+            return "\(health.title) · \(monitor.displayText)"
+        default: return health.title
         }
-        if monitor.runtime.consecutiveFailures >= 3 {
-            return L10n.string("status.repeated_failure")
-        }
-        if monitor.runtime.consecutiveFailures > 0 {
-            return L10n.format(
-                "status.update_failed",
-                Int64(monitor.runtime.consecutiveFailures)
-            )
-        }
-        return monitor.displayText
     }
 
     private func sidebarColor(for monitor: Monitor) -> Color {
-        guard monitor.isEnabled else { return .secondary }
-        if store.pollingStatus.refreshingIDs.contains(monitor.id) { return .accentColor }
-        if monitor.runtime.consecutiveFailures >= 3 { return .red }
-        if monitor.runtime.consecutiveFailures > 0 { return .orange }
-        return .secondary
+        switch store.health(for: monitor).phase {
+        case .failed: .red
+        case .retrying, .stale, .offline: .orange
+        case .refreshing: .accentColor
+        default: .secondary
+        }
     }
 
     private func requestNavigation(_ navigation: PendingNavigation) {
@@ -553,7 +587,13 @@ struct SettingsView: View {
 
     private func applyNavigation(_ navigation: PendingNavigation) {
         pendingDraft = nil
+        showsGeneralSettings = false
         switch navigation {
+        case .general:
+            selectedID = nil
+            showsGeneralSettings = true
+        case .add:
+            showsSourceCatalog = true
         case let .select(id):
             selectedID = id
         case let .create(kind):
@@ -580,6 +620,8 @@ struct SettingsView: View {
     private func makeDraft(kind: MonitorCreationKind) -> Monitor {
         var draft = Monitor.draft(order: store.monitors.count)
         switch kind {
+        case let .source(choice):
+            return choice.makeMonitor(order: store.monitors.count)
         case .httpAPI:
             draft.sourceKind = .httpAPI
         case .prometheus:

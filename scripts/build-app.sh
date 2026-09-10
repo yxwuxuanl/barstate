@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-BUILD_DIR="$PROJECT_DIR/.build"
+BUILD_DIR="${BARSTATE_BUILD_DIR:-$PROJECT_DIR/.build}"
 APP_DIR="$BUILD_DIR/BarState.app"
 SERVICE_DIR="$APP_DIR/Contents/XPCServices/com.barstate.BarState.ScriptService.xpc"
 DIRECT_BUILD_DIR="$BUILD_DIR/direct"
@@ -17,7 +17,11 @@ if [[ "$SDK_PATH" == *"CommandLineTools"* && -d "$COMMAND_LINE_TOOLS_SDK" ]]; th
     SDK_PATH="$COMMAND_LINE_TOOLS_SDK"
 fi
 
-MACHINE_ARCH="$(uname -m)"
+MACHINE_ARCH="${BARSTATE_BUILD_ARCH:-$(uname -m)}"
+case "$MACHINE_ARCH" in
+    arm64|x86_64) ;;
+    *) echo "Unsupported architecture: $MACHINE_ARCH" >&2; exit 1 ;;
+esac
 TARGET="$MACHINE_ARCH-apple-macosx15.0"
 CORE_SOURCES=("$PROJECT_DIR"/Sources/BarStateCore/*.swift)
 APP_SOURCES=(
@@ -56,6 +60,7 @@ CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
     -framework AppKit \
     -framework SwiftUI \
     -framework Network \
+    -framework UserNotifications \
     -framework ServiceManagement \
     -framework Combine \
     -framework JavaScriptCore \

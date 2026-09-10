@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-BUILD_DIR="$PROJECT_DIR/.build"
+BUILD_DIR="${BARSTATE_BUILD_DIR:-$PROJECT_DIR/.build}"
 DIRECT_BUILD_DIR="$BUILD_DIR/direct"
 MODULE_CACHE_DIR="$BUILD_DIR/module-cache"
 TEST_BINARY="$DIRECT_BUILD_DIR/BarStateAppSmokeTests"
@@ -14,7 +14,7 @@ if [[ "$SDK_PATH" == *"CommandLineTools"* && -d "$COMMAND_LINE_TOOLS_SDK" ]]; th
     SDK_PATH="$COMMAND_LINE_TOOLS_SDK"
 fi
 
-MACHINE_ARCH="$(uname -m)"
+MACHINE_ARCH="${BARSTATE_BUILD_ARCH:-$(uname -m)}"
 TARGET="$MACHINE_ARCH-apple-macosx15.0"
 
 CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
@@ -29,6 +29,7 @@ CLANG_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" swiftc \
     "$PROJECT_DIR/Sources/BarState/App/StatusBarTitleFormatter.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/PollingEngine.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/APIClient.swift" \
+    "$PROJECT_DIR/Sources/BarState/Services/InFlightRequests.swift" \
     "$PROJECT_DIR/Sources/BarState/Services/ScriptServiceClient.swift" \
     "$PROJECT_DIR/Sources/BarState/State/PersistenceController.swift" \
     "$PROJECT_DIR/Sources/BarState/State/MonitorStore.swift" \

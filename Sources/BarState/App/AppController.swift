@@ -11,16 +11,26 @@ final class AppController {
     private var settingsWindowController: SettingsWindowController!
     private var wakeObserver: NSObjectProtocol?
     private var networkStatusMonitor: NetworkStatusMonitor?
+    private var notificationService: MonitorNotificationService?
+    private var clockTask: Task<Void, Never>?
+    private var activationObserver: NSObjectProtocol?
     private let isPreviewMode: Bool
+    private let isNotificationSmoke: Bool
     private let previewsSettings: Bool
+    private var notificationSmokeEvents: [String] = []
     private let settingsCapturePath: String?
     private let firstLaunchSettingsPolicy: FirstLaunchSettingsPolicy
 
     init(userDefaults: UserDefaults = .standard) {
         let arguments = ProcessInfo.processInfo.arguments
         let previewsSettings = arguments.contains("--preview-settings")
-        let isPreviewMode = arguments.contains("--preview") || previewsSettings
+        let isNotificationSmoke = arguments.contains("--notification-smoke")
+        let isPreviewMode = arguments.contains("--preview") || previewsSettings || isNotificationSmoke
+        self.isNotificationSmoke = isNotificationSmoke
         self.isPreviewMode = isPreviewMode
+        if isPreviewMode {
+            NSApp.appearance = NSAppearance(named: arguments.contains("--preview-dark") ? .darkAqua : .aqua)
+        }
         self.previewsSettings = previewsSettings
         self.firstLaunchSettingsPolicy = FirstLaunchSettingsPolicy(defaults: userDefaults)
         if let captureArgument = arguments.first(where: { $0.hasPrefix("--capture-settings=") }) {
@@ -35,9 +45,29 @@ final class AppController {
         } else {
             self.settingsCapturePath = nil
         }
-        let previewMonitors = arguments.contains("--preview-empty")
+        var previewMonitors = arguments.contains("--preview-empty")
             ? []
             : Self.previewMonitors
+        if let providerArgument = arguments.first(where: { $0.hasPrefix("--preview-provider=") }),
+           let provider = DataSourceProvider(rawValue: String(providerArgument.dropFirst("--preview-provider=".count))) {
+            let preset = DataSourcePreset(provider: provider, apiKey: "preview-key")
+            previewMonitors.insert(Monitor(name: provider.displayName, preset: preset, urlString: provider.endpoint,
+                                           displayTemplate: preset.defaultDisplayTemplate,
+                                           refreshInterval: 300, refreshIntervalUnit: .minutes,
+                                           runtime: .init(lastValue: 24.8, lastSuccessAt: Date())), at: 0)
+            for index in previewMonitors.indices { previewMonitors[index].order = index }
+        }
+        if isNotificationSmoke {
+            previewMonitors = [
+                Monitor(name: "Unrelated notification check", isEnabled: false),
+                Monitor(name: "BarState notification check",
+                        alertRule: .init(isEnabled: true, condition: .requestFailure, notifiesRecovery: true),
+                        order: 1)
+            ]
+        }
+        if arguments.contains("--preview-alerts"), !previewMonitors.isEmpty {
+            previewMonitors[0].alertRule = .init(isEnabled: true, threshold: 20)
+        }
         let store = MonitorStore(initialMonitors: isPreviewMode ? previewMonitors : nil)
         self.store = store
         self.loginItemManager = LoginItemManager()
@@ -45,11 +75,11 @@ final class AppController {
         let apiClient = APIClient()
         self.pollingEngine = PollingEngine(
             valueFetcher: apiClient,
-            resultHandler: { [weak store] id, outcome, date in
+            resultHandler: { [weak store] monitor, outcome, date in
                 await store?.record(
-                    monitorID: id,
+                    requestedMonitor: monitor,
                     result: outcome.result,
-                    at: outcome.requestedAt,
+                    at: date,
                     response: outcome.response,
                     requestDuration: outcome.requestDuration
                 )
@@ -76,14 +106,30 @@ final class AppController {
             loginItemManager: loginItemManager
         )
 
-        store.onConfigurationChange = { [weak self] monitors in
-            guard let self else { return }
-            Task {
-                await self.pollingEngine.update(monitors: monitors)
+        if !isPreviewMode || isNotificationSmoke {
+            notificationService = MonitorNotificationService(store: store) { [weak self] id in
+                self?.showSettings(monitorID: id)
+                self?.recordNotificationSmokeEvent("clicked")
+            }
+            store.onAlert = { [weak self] monitor, event in
+                Task { await self?.notificationService?.deliver(event, for: monitor) }
+            }
+            store.onRequestNotificationPermission = { [weak self] in
+                Task { await self?.notificationService?.requestPermission() }
             }
         }
 
-        networkStatusMonitor = NetworkStatusMonitor { [weak pollingEngine] in
+        store.onConfigurationChange = { [weak self] monitors in
+            guard let self else { return }
+            Task {
+                if !self.isPreviewMode { await self.pollingEngine.update(monitors: monitors) }
+                await self.notificationService?.reconcile(monitors: monitors)
+            }
+        }
+
+        networkStatusMonitor = NetworkStatusMonitor(onStatusChange: { [weak store] offline in
+            Task { @MainActor in store?.setNetworkOffline(offline) }
+        }) { [weak pollingEngine] in
             Task {
                 await pollingEngine?.refreshAfterConnectivityRestored()
             }
@@ -96,12 +142,52 @@ final class AppController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.store.tick()
                 await self.pollingEngine.refreshOverdue()
             }
+        }
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.notificationService?.refreshPermission() }
         }
     }
 
     func start() {
+        clockTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.store.tick()
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
+        if isNotificationSmoke {
+            recordNotificationSmokeEvent("started")
+            showSettings()
+            Task {
+                await notificationService?.requestPermission()
+                guard store.notificationPermission == .authorized,
+                      let monitor = store.monitors.first(where: { $0.alertRule.isEnabled }) else {
+                    recordNotificationSmokeEvent("permission-not-authorized")
+                    print("Notification check: permission not authorized")
+                    return
+                }
+                recordNotificationSmokeEvent("authorized")
+                for _ in 0..<3 {
+                    store.record(requestedMonitor: monitor, result: .failure(.requestTimedOut), at: Date(), response: nil)
+                }
+                print("Notification check: submitted isolated failure incident")
+                recordNotificationSmokeEvent("incident-submitted")
+                for _ in 0..<10 {
+                    if await notificationService?.hasDeliveredNotification(for: monitor.id) == true {
+                        recordNotificationSmokeEvent("system-delivered")
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                recordNotificationSmokeEvent("delivery-not-observed")
+            }
+            return
+        }
         if isPreviewMode {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self else { return }
@@ -114,6 +200,9 @@ final class AppController {
                                     to: URL(fileURLWithPath: settingsCapturePath)
                                 )
                                 print("Saved settings preview to \(settingsCapturePath)")
+                                if ProcessInfo.processInfo.arguments.contains("--exit-after-capture") {
+                                    NSApp.terminate(nil)
+                                }
                             } catch {
                                 print("Could not save settings preview: \(error)")
                             }
@@ -127,6 +216,7 @@ final class AppController {
             return
         }
         Task {
+            await notificationService?.refreshPermission()
             await pollingEngine.update(
                 monitors: store.isPersistenceWriteProtected ? [] : store.orderedMonitors
             )
@@ -137,6 +227,16 @@ final class AppController {
             DispatchQueue.main.async { [weak self] in
                 self?.showSettings()
             }
+        }
+    }
+
+    private func recordNotificationSmokeEvent(_ event: String) {
+        guard isNotificationSmoke else { return }
+        notificationSmokeEvents.append(event)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("barstate-notification-check.json")
+        // Test-only lifecycle markers; no monitor data or credentials are written here.
+        if let data = try? JSONEncoder().encode(notificationSmokeEvents) {
+            try? data.write(to: file, options: .atomic)
         }
     }
 
@@ -162,6 +262,7 @@ final class AppController {
 
     func prepareForTermination() async {
         statusBarController.stop()
+        clockTask?.cancel()
         networkStatusMonitor?.cancel()
         await pollingEngine.stop()
         await store.flushPersistence()
