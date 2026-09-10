@@ -1,6 +1,7 @@
 import AppKit
 import BarStateCore
-import UserNotifications
+// Older macOS SDKs lack Sendable annotations on immutable notification results.
+@preconcurrency import UserNotifications
 
 @MainActor
 final class MonitorNotificationService: NSObject, UNUserNotificationCenterDelegate {

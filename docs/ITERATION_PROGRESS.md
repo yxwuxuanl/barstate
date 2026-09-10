@@ -82,3 +82,5 @@
 ## 1.0.0 发布记录
 
 2026-09-10：用户授权提交、推送并发布 1.0.0。版本号统一为 1.0.0，构建号递增为 6；保留已跳过的账户、系统和 VoiceOver 实测边界。GitHub Actions 对发布提交执行双架构测试、构建及冒烟检查，成功后附加 Apple Silicon / Intel DMG。版本与资产以 [Release 页面](https://github.com/yxwuxuanl/barstate/releases/tag/v1.0.0) 为准。
+
+首次远程构建发现 Xcode 16.4 的 UserNotifications 返回类型缺少 Sendable 声明，导致 Swift 6 并发检查失败；针对该系统模块增加兼容导入，保留主线程隔离与通知行为，再执行双架构构建。发布草稿在构建与资产核对通过前不公开。
